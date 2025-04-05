@@ -62,4 +62,23 @@ This is the recommended method for deploying with Portainer as it uses the `dock
 Portainer will now pull the necessary base image (if not already present), build your bot's image using the `Dockerfile`, and start the container defined in the `docker-compose.yml` file, injecting the environment variables you provided.
 
 You can check the logs for the `telegram_sonarr_radarr_bot` container within Portainer to ensure it started correctly and see any potential errors.
+
+## Deployment using Portainer (Pre-built Image)
+
+This method uses the pre-built Docker image available on Docker Hub, suitable if you don't want to build the image yourself or if deploying from source/compose is not preferred.
+
+1.  **Navigate to Containers:** In Portainer, go to the environment where you want to deploy the bot, then click on "Containers" in the left-hand menu.
+2.  **Add Container:** Click the "+ Add container" button.
+3.  **Name:** Give your container a name (e.g., `plexarrs-bot`).
+4.  **Image:** In the "Image" field, enter `uniextra/plexarrs:v1`. Ensure "Always pull the image" is enabled if you want Portainer to check for newer versions of the `v1` tag (though typically `v1` would point to a specific build).
+5.  **Manual network port publishing:** No ports need to be published for this bot.
+6.  **Environment Variables:**
+    *   Scroll down to the "Advanced container settings" section and click on the "Env" tab.
+    *   Click "+ Add environment variable" for each variable listed in the [Configuration](#configuration) section above (both required and any optional ones you need).
+    *   Set the `name` (e.g., `TELEGRAM_BOT_TOKEN`) and the corresponding `value` (e.g., `12345:ABCDEF...`).
+7.  **Restart Policy:** It's recommended to set the "Restart policy" (under the "Restart policy" tab in "Advanced container settings") to "Unless stopped" or "Always" to ensure the bot restarts if it crashes or the Docker daemon restarts.
+8.  **Deploy:** Click the "Deploy the container" button.
+
+Portainer will pull the `uniextra/plexarrs:v1` image from Docker Hub and start the container with the environment variables you provided. You can check the container's logs in Portainer to verify it's running correctly.
+
 # PlexArrs
