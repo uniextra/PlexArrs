@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Telegram Sonarr/Radarr Bot
 
 This bot allows you to interact with your Sonarr and Radarr instances via Telegram to search for and add movies or series.
@@ -168,4 +167,3 @@ This method uses the pre-built Docker image available on Docker Hub, suitable if
 Portainer will pull the `uniextra/plexarrs:v1` image from Docker Hub and start the container with the environment variables you provided. You can check the container's logs in Portainer to verify it's running correctly.
 
 # PlexArrs
->>>>>>> 4ba1e3dd0dd17897e7ffe87c4e1453cbe23c5d0d
