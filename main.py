@@ -237,10 +237,11 @@ async def start(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text("Sorry, you are not authorized to use this bot.")
         return ConversationHandler.END
 
+    # Initial prompt without the Cancel button
     keyboard = [
         [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
         [InlineKeyboardButton("📺 Series", callback_data='series')],
-        [InlineKeyboardButton("❌ Cancel", callback_data='cancel')],
+        # [InlineKeyboardButton("❌ Cancel", callback_data='cancel')], # Removed initial cancel button
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
