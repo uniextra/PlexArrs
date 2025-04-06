@@ -120,29 +120,29 @@ async def _restart_conversation(update: Update, context: CallbackContext, messag
     return SEARCH_TYPE
 
 
-async def _display_search_results(update: Update, context: CallbackContext) -> int:
-    """Displays the search results stored in context.user_data."""
-    results = context.user_data.get('search_results', [])
-    message_context = update.callback_query.message if update.callback_query else update.message
+# async def _display_search_results(update: Update, context: CallbackContext) -> int:
+#     """Displays the search results stored in context.user_data."""
+#     results = context.user_data.get('search_results', [])
+#     message_context = update.callback_query.message if update.callback_query else update.message
 
-    if not results:
-        # This case should ideally be handled before calling this function,
-        # but as a fallback, restart if results are somehow empty.
-        logger.warning("_display_search_results called with empty results.")
-        return await _restart_conversation(update, context, "No results found to display.")
+#     if not results:
+#         # This case should ideally be handled before calling this function,
+#         # but as a fallback, restart if results are somehow empty.
+#         logger.warning("_display_search_results called with empty results.")
+#         return await _restart_conversation(update, context, "No results found to display.")
 
-    keyboard = []
-    for i, item in enumerate(results[:10]): # Limit to 10 results
-        title = item.get('title', 'N/A')
-        year = item.get('year', '')
-        button_text = f"{title} ({year})" if year else title
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=f'choose_{i}')])
+#     keyboard = []
+#     for i, item in enumerate(results[:10]): # Limit to 10 results
+#         title = item.get('title', 'N/A')
+#         year = item.get('year', '')
+#         button_text = f"{title} ({year})" if year else title
+#         keyboard.append([InlineKeyboardButton(button_text, callback_data=f'choose_{i}')])
 
-    keyboard.append([InlineKeyboardButton("❌ Cancel Search", callback_data='cancel')]) # Use the restart cancel
-    reply_markup = InlineKeyboardMarkup(keyboard)
+#     keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data='cancel')]) # Use the restart cancel
+#     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await message_context.reply_text("Here's what I found:", reply_markup=reply_markup)
-    return CHOOSE_ITEM
+#     await message_context.reply_text("Here's what I found:", reply_markup=reply_markup)
+#     return CHOOSE_ITEM
 
 
 # --- Sonarr Functions ---
@@ -325,19 +325,7 @@ async def search_query_received(update: Update, context: CallbackContext) -> int
         await update.message.reply_text("Sorry, I couldn't find anything matching that title.")
         # Use the restart helper to ask again
         return await _restart_conversation(update, context, "Let's try again.")
-        # The original code resent buttons here, but _restart_conversation does that now.
-        # keyboard = [
-        #    [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
-        #    [InlineKeyboardButton("📺 Series", callback_data='series')],
-        #    [InlineKeyboardButton("❌ Cancel", callback_data='cancel')],
-        # ]
-        # reply_markup = InlineKeyboardMarkup(keyboard)
-        # await update.message.reply_text(
-        #     "What would you like to search for?",
-        #     reply_markup=reply_markup
-        # )
-        # Go back to the state where the user chooses movie/series
-        # return SEARCH_TYPE # Now handled by _restart_conversation
+
 
     context.user_data['search_results'] = results
     keyboard = []
@@ -359,9 +347,15 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
     await query.answer()
     callback_data = query.data
 
+    # Handle 'backtosearch' from the results list explicitly
+    if callback_data == 'backtosearch':
+        return await _restart_conversation(update, context, "Returning to main search.")
+
+    # Keep handling 'cancel' just in case, though fallbacks might catch it too
     if callback_data == 'cancel':
         # Use the restart helper
-        return await _restart_conversation(update, context, "Selection cancelled.")
+        return await _restart_conversation(update, context, "Operation cancelled.")
+
 
     if not callback_data.startswith('choose_'):
         # Use the restart helper for invalid selection
@@ -391,7 +385,9 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
 
         keyboard = [
             [InlineKeyboardButton("✅ Add this", callback_data='confirm_add')],
-            [InlineKeyboardButton("❌ Cancel", callback_data='cancel_add')],
+            # Add the "Back" button
+            [[InlineKeyboardButton("⬅️ Back to search results", callback_data='back_to_results')],
+            [InlineKeyboardButton("❌ Cancel Search", callback_data='cancel_add')]], # This cancel now restarts the whole search
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -426,10 +422,10 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
     callback_data = query.data
     update_message = update.effective_message # Use effective_message for replies
 
-    if callback_data == 'cancel_add':
-        # --- Start: Refactored Cancel Confirmation Logic ---
+    # Handle "Back to search results"
+    if callback_data == 'back_to_results':
         try:
-            # Try deleting the message with the photo/confirmation
+            # Delete the confirmation message
             await query.delete_message()
             if update_message: # Check if message context exists
                  await update_message.reply_text("Okay, I won't add it. Operation cancelled.")
@@ -451,10 +447,25 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
         # Use the restart helper after cancelling the add
         # The previous logic sent multiple messages, let's simplify with the helper
         return await _restart_conversation(update, context, "Okay, I won't add it. Operation cancelled.")
-        # --- End: Refactored Cancel Confirmation Logic ---
+
+    # Handle "Cancel Search" - this will now restart the conversation
+    if callback_data == 'cancel_add':
+        try:
+            # Delete the confirmation message
+            await query.delete_message()
+        except Exception as e:
+            logger.warning(f"Could not delete confirmation message on cancel_add (restart): {e}")
+            # Try editing as a fallback
+            try:
+                 await query.edit_message_text("Cancelling search...")
+            except Exception as e2:
+                 logger.error(f"Could not edit message on cancel_add (restart) either: {e2}")
+        # Use the restart helper to go back to the very beginning
+        return await _restart_conversation(update, context, "Search cancelled.")
+
 
     if callback_data != 'confirm_add':
-        # Use the restart helper for invalid confirmation
+        # Use the restart helper for any other invalid confirmation
         return await _restart_conversation(update, context, "Invalid confirmation.")
 
     # --- Start: Refactored Add Confirmation Logic ---
@@ -520,7 +531,7 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
         [InlineKeyboardButton("📺 Series", callback_data='series')],
-        [InlineKeyboardButton("❌ Cancel", callback_data='cancel')],
+        #[InlineKeyboardButton("❌ Cancel", callback_data='cancel')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     # 4. Edit the "Adding..." status message with the result (if status_message was sent)
@@ -619,8 +630,9 @@ def main() -> None:
         states={
             SEARCH_TYPE: [CallbackQueryHandler(search_type_chosen)],
             SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_query_received)],
-            CHOOSE_ITEM: [CallbackQueryHandler(item_chosen, pattern='^choose_\\d+$|^cancel$')],
-            CONFIRM_ADD: [CallbackQueryHandler(add_item_confirmed, pattern='^confirm_add$|^cancel_add$')],
+            CHOOSE_ITEM: [CallbackQueryHandler(item_chosen, pattern='^choose_\\d+$|^cancel$|^backtosearch$')], # Added backtosearch pattern here too
+            # Add back_to_results pattern
+            CONFIRM_ADD: [CallbackQueryHandler(add_item_confirmed, pattern='^confirm_add$|^cancel_add$|^back_to_results$')],
         },
         fallbacks=[
             CommandHandler('cancel', cancel_conversation), # Explicit /cancel command still ends the conversation
