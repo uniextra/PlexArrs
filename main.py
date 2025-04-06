@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import logging
 import requests
 import json
@@ -1281,4 +1280,3 @@ if __name__ == '__main__':
     # The check for placeholder tokens is removed as config.py is no longer used.
     # The check for missing environment variables is now inside main().
     main()
->>>>>>> 4ba1e3dd0dd17897e7ffe87c4e1453cbe23c5d0d
