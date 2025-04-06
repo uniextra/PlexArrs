@@ -11,6 +11,7 @@ config.py
 Dockerfile
 .dockerignore
 guia.txt
+.gitignore
 
 # Ignore Git files (if using git)
 .git

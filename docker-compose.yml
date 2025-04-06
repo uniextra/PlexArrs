@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 version: '3.8'
 
 services:
@@ -40,46 +39,4 @@ services:
 # networks:
 #   your_network_name:
 #     external: true # Or define it here
-=======
-version: '3.8'
 
-services:
-  telegram-bot:
-    build: .
-    container_name: telegram_sonarr_radarr_bot
-    restart: unless-stopped
-    environment:
-      # --- Required Environment Variables ---
-      # Obtain your bot token from BotFather on Telegram
-      - TELEGRAM_BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN_HERE
-      # Your Sonarr instance URL (e.g., http://sonarr.host.or.ip:8989)
-      - SONARR_URL=YOUR_SONARR_URL_HERE
-      # Your Sonarr API Key (Find in Sonarr -> Settings -> General)
-      - SONARR_API_KEY=YOUR_SONARR_API_KEY_HERE
-      # Your Radarr instance URL (e.g., http://radarr.host.or.ip:7878)
-      - RADARR_URL=YOUR_RADARR_URL_HERE
-      # Your Radarr API Key (Find in Radarr -> Settings -> General)
-      - RADARR_API_KEY=YOUR_RADARR_API_KEY_HERE
-
-      # --- Optional Environment Variables (Defaults are usually 1 if not set) ---
-      # Sonarr Root Folder ID (Find in Sonarr -> Settings -> Media Management -> Root Folders)
-      - SONARR_ROOT_FOLDER_ID=1
-      # Sonarr Quality Profile ID (Find in Sonarr -> Settings -> Profiles)
-      - SONARR_QUALITY_PROFILE_ID=1
-      # Radarr Root Folder ID (Find in Radarr -> Settings -> Media Management -> Root Folders)
-      - RADARR_ROOT_FOLDER_ID=1
-      # Radarr Quality Profile ID (Find in Radarr -> Settings -> Profiles)
-      - RADARR_QUALITY_PROFILE_ID=1
-      # Comma-separated list of Telegram User IDs allowed to use the bot (e.g., 123456789,987654321)
-      # Leave empty to allow all users.
-      - ALLOWED_USER_IDS=YOUR_ALLOWED_TELEGRAM_IDS_HERE # e.g., 267580734 or 123,456
-
-    # Optional: Uncomment and adjust if your bot needs access to specific networks
-    # networks:
-    #   - your_network_name
-
-# Optional: Define networks if needed
-# networks:
-#   your_network_name:
-#     external: true # Or define it here
->>>>>>> 4ba1e3dd0dd17897e7ffe87c4e1453cbe23c5d0d

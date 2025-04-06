@@ -22,12 +22,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: uniextra/telegram_sonarr_radarr_bot
+          images: uniextra/plexarrs
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./telegram_sonarr_radarr_bot # Set context to the bot's directory
+          context: . # Set context to the repository root
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
