@@ -1,2 +1,7 @@
+<<<<<<< HEAD
 python-telegram-bot[job-queue]>=20.0,<21.0
 requests>=2.20.0
+=======
+python-telegram-bot[job-queue]>=20.0,<21.0
+requests>=2.20.0
+>>>>>>> 4ba1e3dd0dd17897e7ffe87c4e1453cbe23c5d0d
