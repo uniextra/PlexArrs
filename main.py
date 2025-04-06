@@ -4,7 +4,7 @@ import json
 import sys, os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
-import config # Remove config import
+#import config # Remove config import
 
 # Enable logging
 logging.basicConfig(
