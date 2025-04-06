@@ -4,7 +4,7 @@ import json
 import sys, os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
-#import config # Remove config import
+#import config
 
 # Enable logging
 logging.basicConfig(
@@ -18,11 +18,11 @@ SEARCH_TYPE, SEARCH_QUERY, CHOOSE_ITEM, CONFIRM_ADD = range(4)
 # --- Environment Variable Loading & Validation ---
 
 # Load configuration from environment variables
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', config.TELEGRAM_BOT_TOKEN)
-SONARR_URL = os.getenv('SONARR_URL', config.SONARR_URL)
-SONARR_API_KEY = os.getenv('SONARR_API_KEY', config.SONARR_API_KEY)
-RADARR_URL = os.getenv('RADARR_URL', config.RADARR_URL)
-RADARR_API_KEY = os.getenv('RADARR_API_KEY', config.RADARR_API_KEY)
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+SONARR_URL = os.getenv('SONARR_URL')
+SONARR_API_KEY = os.getenv('SONARR_API_KEY')
+RADARR_URL = os.getenv('RADARR_URL')
+RADARR_API_KEY = os.getenv('RADARR_API_KEY')
 
 # Load and convert integer variables with defaults or error handling
 try:
