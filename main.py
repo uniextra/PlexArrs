@@ -83,6 +83,43 @@ def make_api_request(base_url: str, api_key: str, endpoint: str, params: dict = 
         logger.error(f"Failed to decode JSON response from {url}: {e}")
         return None
 
+async def _restart_conversation(update: Update, context: CallbackContext, message: str) -> int:
+    """Cleans up user data and sends the initial prompt, restarting the conversation."""
+    logger.info(f"Restarting conversation: {message}")
+    # Clean up user data defensively
+    for key in ['search_type', 'search_results', 'chosen_item']:
+        context.user_data.pop(key, None)
+
+    keyboard = [
+        [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
+        [InlineKeyboardButton("📺 Series", callback_data='series')],
+        [InlineKeyboardButton("❌ Cancel", callback_data='cancel')], # This cancel button will now restart
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Determine how to send the message (edit or new)
+    query = update.callback_query
+    if query:
+        try:
+            # Try editing the existing message first
+            await query.edit_message_text(f"{message}\nWhat would you like to search for?", reply_markup=reply_markup)
+        except Exception as e:
+            logger.warning(f"Could not edit message on restart: {e}. Sending new message.")
+            # If editing fails (e.g., message too old), send a new message via the original message context
+            try:
+                await query.message.reply_text(f"{message}\nWhat would you like to search for?", reply_markup=reply_markup)
+            except Exception as e2:
+                 logger.error(f"Could not send new message on restart either: {e2}")
+
+    elif update.message:
+        await update.message.reply_text(f"{message}\nWhat would you like to search for?", reply_markup=reply_markup)
+    else:
+        # Fallback if no context is available (should be rare)
+        logger.error("Could not send restart message: No query or message context.")
+
+    return SEARCH_TYPE
+
+
 # --- Sonarr Functions ---
 
 def search_sonarr(query: str) -> list:
@@ -227,8 +264,8 @@ async def search_type_chosen(update: Update, context: CallbackContext) -> int:
     search_type = query.data
 
     if search_type == 'cancel':
-        await query.edit_message_text("Search cancelled.")
-        return ConversationHandler.END
+        # Use the restart helper
+        return await _restart_conversation(update, context, "Search cancelled.")
 
     context.user_data['search_type'] = search_type
     await query.edit_message_text(f"Okay, searching for a {search_type}. Please enter the title:")
@@ -252,21 +289,29 @@ async def search_query_received(update: Update, context: CallbackContext) -> int
     elif search_type == 'series':
         results = search_sonarr(query)
 
+    # Handle API errors explicitly if make_api_request returned None
+    if results is None: # Check for None which indicates an API error
+        # Use the restart helper
+        return await _restart_conversation(update, context, "Sorry, there was an error communicating with the service.")
+
+    # Handle case where API worked but found no results
     if not results:
-        await update.message.reply_text("Sorry, I couldn't find anything matching that title. Would you like to try searching again?")
-        # Resend the initial choice buttons
-        keyboard = [
-            [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
-            [InlineKeyboardButton("📺 Series", callback_data='series')],
-            [InlineKeyboardButton("❌ Cancel", callback_data='cancel')],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            "What would you like to search for?",
-            reply_markup=reply_markup
-        )
+        await update.message.reply_text("Sorry, I couldn't find anything matching that title.")
+        # Use the restart helper to ask again
+        return await _restart_conversation(update, context, "Let's try again.")
+        # The original code resent buttons here, but _restart_conversation does that now.
+        # keyboard = [
+        #    [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
+        #    [InlineKeyboardButton("📺 Series", callback_data='series')],
+        #    [InlineKeyboardButton("❌ Cancel", callback_data='cancel')],
+        # ]
+        # reply_markup = InlineKeyboardMarkup(keyboard)
+        # await update.message.reply_text(
+        #     "What would you like to search for?",
+        #     reply_markup=reply_markup
+        # )
         # Go back to the state where the user chooses movie/series
-        return SEARCH_TYPE
+        # return SEARCH_TYPE # Now handled by _restart_conversation
 
     context.user_data['search_results'] = results
     keyboard = []
@@ -289,12 +334,12 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
     callback_data = query.data
 
     if callback_data == 'cancel':
-        await query.edit_message_text("Search cancelled.")
-        return ConversationHandler.END
+        # Use the restart helper
+        return await _restart_conversation(update, context, "Selection cancelled.")
 
     if not callback_data.startswith('choose_'):
-        await query.edit_message_text("Invalid selection.")
-        return ConversationHandler.END # Or back to CHOOSE_ITEM?
+        # Use the restart helper for invalid selection
+        return await _restart_conversation(update, context, "Invalid selection.")
 
     try:
         choice_index = int(callback_data.split('_')[1])
@@ -344,9 +389,8 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
 
     except (ValueError, IndexError) as e:
         logger.error(f"Error processing item choice: {e}")
-        await query.edit_message_text("Sorry, there was an error processing your choice. Please try again.")
-        # Maybe go back to CHOOSE_ITEM or end?
-        return ConversationHandler.END
+        # Use the restart helper on error
+        return await _restart_conversation(update, context, "Sorry, there was an error processing your choice.")
 
 
 async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
@@ -378,29 +422,14 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
         context.user_data.pop('search_type', None)
         context.user_data.pop('search_results', None)
         context.user_data.pop('chosen_item', None)
-        # Instead of END, go back to the start
-        keyboard = [
-            [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
-            [InlineKeyboardButton("📺 Series", callback_data='series')],
-            [InlineKeyboardButton("❌ Cancel", callback_data='cancel')],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        # Send the next prompt in a new message after the cancellation confirmation
-        if update_message: # Check if message context exists
-            await update_message.reply_text(
-                "What would you like to search for next?",
-                reply_markup=reply_markup
-            )
-        return SEARCH_TYPE # Go back to the start state
+        # Use the restart helper after cancelling the add
+        # The previous logic sent multiple messages, let's simplify with the helper
+        return await _restart_conversation(update, context, "Okay, I won't add it. Operation cancelled.")
         # --- End: Refactored Cancel Confirmation Logic ---
 
     if callback_data != 'confirm_add':
-        await query.edit_message_text("Invalid confirmation.")
-        # Clean up user data on invalid confirmation too
-        context.user_data.pop('search_type', None)
-        context.user_data.pop('search_results', None)
-        context.user_data.pop('chosen_item', None)
-        return ConversationHandler.END # End here might be okay, or go back? Let's end for invalid state.
+        # Use the restart helper for invalid confirmation
+        return await _restart_conversation(update, context, "Invalid confirmation.")
 
     # --- Start: Refactored Add Confirmation Logic ---
     chosen_item = context.user_data.get('chosen_item')
@@ -418,11 +447,8 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
         # Send error message using update_message if available
         if update_message:
             await update_message.reply_text("Something went wrong, missing context. Please start over with /start.")
-        # Clean up user data
-        context.user_data.pop('search_type', None)
-        context.user_data.pop('search_results', None)
-        context.user_data.pop('chosen_item', None)
-        return ConversationHandler.END
+        # Use the restart helper if context is missing
+        return await _restart_conversation(update, context, "Something went wrong, missing context.")
 
     title = chosen_item.get('title', 'N/A')
 
@@ -443,11 +469,8 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
     except Exception as e:
         logger.error(f"Failed to send 'Adding...' status message: {e}")
         # Cannot proceed without status message to update
-        # Clean up user data
-        context.user_data.pop('search_type', None)
-        context.user_data.pop('search_results', None)
-        context.user_data.pop('chosen_item', None)
-        return ConversationHandler.END
+        # Use the restart helper if sending status message fails
+        return await _restart_conversation(update, context, "Failed to send status message.")
 
 
     # 3. Perform the add operation
@@ -523,6 +546,21 @@ async def cancel_conversation(update: Update, context: CallbackContext) -> int:
 
     return ConversationHandler.END
 
+async def cancel_conversation_and_restart(update: Update, context: CallbackContext) -> int:
+    """Handles 'cancel' button presses within the conversation, restarting it."""
+    return await _restart_conversation(update, context, "Operation cancelled.")
+
+async def unknown_command(update: Update, context: CallbackContext) -> None:
+    """Handles unknown commands during the conversation."""
+    await update.message.reply_text("Sorry, I didn't understand that command. Use /cancel to stop or continue the current process.")
+    # We don't change the state here, let the user retry or cancel.
+
+async def unknown_state_handler(update: Update, context: CallbackContext) -> int:
+    """Handles any unexpected message or callback query in any state."""
+    logger.warning(f"Unhandled update in state {context.user_data.get('_state')}: {update}")
+    return await _restart_conversation(update, context, "Something went wrong or I received unexpected input. Let's start over.")
+
+
 def main() -> None:
     """Start the bot."""
     # --- Environment Variable Check ---
@@ -559,9 +597,14 @@ def main() -> None:
             CONFIRM_ADD: [CallbackQueryHandler(add_item_confirmed, pattern='^confirm_add$|^cancel_add$')],
         },
         fallbacks=[
-            CommandHandler('cancel', cancel_conversation),
-            CallbackQueryHandler(cancel_conversation, pattern='^cancel$') # General cancel from buttons
+            CommandHandler('cancel', cancel_conversation), # Explicit /cancel command still ends the conversation
+            CallbackQueryHandler(cancel_conversation_and_restart, pattern='^cancel$'), # Inline cancel buttons restart
+            # Add more robust fallbacks
+            MessageHandler(filters.COMMAND, unknown_command), # Handle unknown commands within the conversation
+            MessageHandler(filters.ALL, unknown_state_handler), # Handle unexpected text/messages
+            CallbackQueryHandler(unknown_state_handler) # Handle unexpected callbacks
             ],
+        # Let's keep per_user=True for now, it's generally safer for conversation state management.
         per_user=True # Store conversation state per user
     )
 
@@ -577,4 +620,3 @@ if __name__ == '__main__':
     # The check for placeholder tokens is removed as config.py is no longer used.
     # The check for missing environment variables is now inside main().
     main()
-
