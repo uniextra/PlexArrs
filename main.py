@@ -1,10 +1,10 @@
 import logging
 import requests
 import json
-import os # Import os module
+import sys, os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
-# import config # Remove config import
+import config # Remove config import
 
 # Enable logging
 logging.basicConfig(
@@ -18,11 +18,11 @@ SEARCH_TYPE, SEARCH_QUERY, CHOOSE_ITEM, CONFIRM_ADD = range(4)
 # --- Environment Variable Loading & Validation ---
 
 # Load configuration from environment variables
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-SONARR_URL = os.getenv('SONARR_URL')
-SONARR_API_KEY = os.getenv('SONARR_API_KEY')
-RADARR_URL = os.getenv('RADARR_URL')
-RADARR_API_KEY = os.getenv('RADARR_API_KEY')
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', config.TELEGRAM_BOT_TOKEN)
+SONARR_URL = os.getenv('SONARR_URL', config.SONARR_URL)
+SONARR_API_KEY = os.getenv('SONARR_API_KEY', config.SONARR_API_KEY)
+RADARR_URL = os.getenv('RADARR_URL', config.RADARR_URL)
+RADARR_API_KEY = os.getenv('RADARR_API_KEY', config.RADARR_API_KEY)
 
 # Load and convert integer variables with defaults or error handling
 try:
@@ -93,7 +93,7 @@ async def _restart_conversation(update: Update, context: CallbackContext, messag
     keyboard = [
         [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
         [InlineKeyboardButton("📺 Series", callback_data='series')],
-        [InlineKeyboardButton("❌ Cancel", callback_data='cancel')], # This cancel button will now restart
+        #[InlineKeyboardButton("❌ Cancel", callback_data='cancel')], # This cancel button will now restart
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -119,30 +119,6 @@ async def _restart_conversation(update: Update, context: CallbackContext, messag
 
     return SEARCH_TYPE
 
-
-# async def _display_search_results(update: Update, context: CallbackContext) -> int:
-#     """Displays the search results stored in context.user_data."""
-#     results = context.user_data.get('search_results', [])
-#     message_context = update.callback_query.message if update.callback_query else update.message
-
-#     if not results:
-#         # This case should ideally be handled before calling this function,
-#         # but as a fallback, restart if results are somehow empty.
-#         logger.warning("_display_search_results called with empty results.")
-#         return await _restart_conversation(update, context, "No results found to display.")
-
-#     keyboard = []
-#     for i, item in enumerate(results[:10]): # Limit to 10 results
-#         title = item.get('title', 'N/A')
-#         year = item.get('year', '')
-#         button_text = f"{title} ({year})" if year else title
-#         keyboard.append([InlineKeyboardButton(button_text, callback_data=f'choose_{i}')])
-
-#     keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data='cancel')]) # Use the restart cancel
-#     reply_markup = InlineKeyboardMarkup(keyboard)
-
-#     await message_context.reply_text("Here's what I found:", reply_markup=reply_markup)
-#     return CHOOSE_ITEM
 
 
 # --- Sonarr Functions ---
@@ -294,8 +270,46 @@ async def search_type_chosen(update: Update, context: CallbackContext) -> int:
         return await _restart_conversation(update, context, "Search cancelled.")
 
     context.user_data['search_type'] = search_type
-    await query.edit_message_text(f"Okay, searching for a {search_type}. Please enter the title:")
+    await query.edit_message_text(f"Okay, searching for a <b>{search_type}<b/>. Please enter the title:")
     return SEARCH_QUERY
+
+#######################
+async def _render_search_results(update: Update, context: CallbackContext, results: list) -> int:
+    try:
+        """Displays search results with inline buttons."""
+        context.user_data['search_results'] = results
+
+        keyboard = []
+        for i, item in enumerate(results[:10]):  # Limit to 10 results
+            title = item.get('title', 'N/A')
+            year = item.get('year', '')
+            button_text = f"{title} ({year})" if year else title
+            
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f'choose_{i}')])
+
+        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data='cancel')])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        if update.callback_query:
+            await update.callback_query.message.reply_text(
+                "Here's what I found:", reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text(
+                "Here's what I found:", reply_markup=reply_markup
+            )
+
+
+        return CHOOSE_ITEM
+    except (ValueError, IndexError) as e:
+        logger.error(f"Error _render_search_results: {e}")
+        # Use the restart helper on error
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        logging.error("Error: {} {} {} {}".format(str(e),exc_type, fname, exc_tb.tb_lineno))  
+##########################
+
+
 
 async def search_query_received(update: Update, context: CallbackContext) -> int:
     """Performs the search based on the type and query, then displays results."""
@@ -338,8 +352,10 @@ async def search_query_received(update: Update, context: CallbackContext) -> int
     keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data='cancel')])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text("Here's what I found:", reply_markup=reply_markup)
-    return CHOOSE_ITEM
+    # await update.message.reply_text("Here's what I found:", reply_markup=reply_markup)
+    # return CHOOSE_ITEM
+    return await _render_search_results(update, context, results)
+
 
 async def item_chosen(update: Update, context: CallbackContext) -> int:
     """Handles the user's choice from the search results and asks for confirmation."""
@@ -348,8 +364,16 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
     callback_data = query.data
 
     # Handle 'backtosearch' from the results list explicitly
-    if callback_data == 'backtosearch':
-        return await _restart_conversation(update, context, "Returning to main search.")
+    # if callback_data == 'back_to_results':
+    #     return await search_query_received(update, context)
+    ##########################
+    if callback_data == 'back_to_results':
+        results = context.user_data.get('search_results')
+        if results:
+            return await _render_search_results(update, context, results)
+        else:
+            return await _restart_conversation(update, context, "No results to go back to.")
+    ##########################
 
     # Keep handling 'cancel' just in case, though fallbacks might catch it too
     if callback_data == 'cancel':
@@ -400,7 +424,7 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
                     parse_mode='HTML'
                 )
                 # Delete the previous message with the list
-                await query.delete_message()
+                #await query.delete_message()
             except Exception as e:
                 logger.warning(f"Failed to send photo {poster_url}: {e}. Sending text instead.")
                 await query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='HTML')
@@ -412,6 +436,9 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
     except (ValueError, IndexError) as e:
         logger.error(f"Error processing item choice: {e}")
         # Use the restart helper on error
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        logging.error("Error: {} {} {} {}".format(str(e),exc_type, fname, exc_tb.tb_lineno))        
         return await _restart_conversation(update, context, "Sorry, there was an error processing your choice.")
 
 
@@ -423,14 +450,25 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
     update_message = update.effective_message # Use effective_message for replies
 
     # Handle "Back to search results"
+    # # if callback_data == 'back_to_results':
+    # #     try:
+    # #         # Delete the confirmation message
+    # #         await query.delete_message()
+    # #         if update_message: # Check if message context exists
+    # #              await update_message.reply_text("Okay, I won't add it. Operation cancelled.")
     if callback_data == 'back_to_results':
         try:
-            # Delete the confirmation message
-            await query.delete_message()
-            if update_message: # Check if message context exists
-                 await update_message.reply_text("Okay, I won't add it. Operation cancelled.")
+            results = context.user_data.get('search_results')
+            if results:
+                return await _render_search_results(update, context, results)
+            else:
+                return await _restart_conversation(update, context, "No results to go back to.")
+
         except Exception as e:
             logger.warning(f"Could not delete message on cancel: {e}. Trying edit instead.")
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            logging.error("Error: {} {} {} {}".format(str(e),exc_type, fname, exc_tb.tb_lineno))
             try:
                  # Edit using query context as fallback if delete failed
                  await query.edit_message_text("Okay, I won't add it. Operation cancelled.")
@@ -648,6 +686,8 @@ def main() -> None:
 
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CallbackQueryHandler(unknown_state_handler))
+
 
     # Run the bot until the user presses Ctrl-C
     logger.info("Starting bot...")
