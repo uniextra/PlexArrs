@@ -386,8 +386,8 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
         keyboard = [
             [InlineKeyboardButton("✅ Add this", callback_data='confirm_add')],
             # Add the "Back" button
-            [[InlineKeyboardButton("⬅️ Back to search results", callback_data='back_to_results')],
-            [InlineKeyboardButton("❌ Cancel Search", callback_data='cancel_add')]], # This cancel now restarts the whole search
+            [InlineKeyboardButton("⬅️ Back to search results", callback_data='back_to_results')],
+            [InlineKeyboardButton("❌ Cancel Search", callback_data='cancel_add')], # This cancel now restarts the whole search
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
