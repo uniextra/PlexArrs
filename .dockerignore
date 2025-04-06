@@ -10,6 +10,7 @@ config.py
 # Ignore Docker specific files
 Dockerfile
 .dockerignore
+guia.txt
 
 # Ignore Git files (if using git)
 .git
