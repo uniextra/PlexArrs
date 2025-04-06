@@ -120,6 +120,31 @@ async def _restart_conversation(update: Update, context: CallbackContext, messag
     return SEARCH_TYPE
 
 
+async def _display_search_results(update: Update, context: CallbackContext) -> int:
+    """Displays the search results stored in context.user_data."""
+    results = context.user_data.get('search_results', [])
+    message_context = update.callback_query.message if update.callback_query else update.message
+
+    if not results:
+        # This case should ideally be handled before calling this function,
+        # but as a fallback, restart if results are somehow empty.
+        logger.warning("_display_search_results called with empty results.")
+        return await _restart_conversation(update, context, "No results found to display.")
+
+    keyboard = []
+    for i, item in enumerate(results[:10]): # Limit to 10 results
+        title = item.get('title', 'N/A')
+        year = item.get('year', '')
+        button_text = f"{title} ({year})" if year else title
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f'choose_{i}')])
+
+    keyboard.append([InlineKeyboardButton("❌ Cancel Search", callback_data='cancel')]) # Use the restart cancel
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await message_context.reply_text("Here's what I found:", reply_markup=reply_markup)
+    return CHOOSE_ITEM
+
+
 # --- Sonarr Functions ---
 
 def search_sonarr(query: str) -> list:
