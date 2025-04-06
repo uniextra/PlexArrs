@@ -579,6 +579,44 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
     return SEARCH_TYPE # Go back to the start state
     # --- End: Refactored Add Confirmation Logic ---
 
+async def unrecognized_callback_handler(update: Update, context: CallbackContext) -> int:
+    """Handles unrecognized callback queries by restarting the search prompt."""
+    query = update.callback_query
+    if query:
+        await query.answer("Unrecognized action. Let's start over.") # Optional feedback
+        # Send the initial search prompt again
+        keyboard = [
+            [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
+            [InlineKeyboardButton("📺 Series", callback_data='series')],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            # Try editing the message if possible
+            await query.edit_message_text(
+                "Unrecognized action. What would you like to search for?",
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message on unrecognized callback: {e}. Sending new message.")
+            # If editing fails (e.g., message too old), send a new message
+            await query.message.reply_text(
+                "Unrecognized action. What would you like to search for?",
+                reply_markup=reply_markup
+            )
+    else:
+        # Should not happen for a CallbackQueryHandler, but handle defensively
+        logger.warning("unrecognized_callback_handler called without a query object.")
+        if update.effective_message:
+             await update.effective_message.reply_text("Something went wrong. Use /start to begin.")
+        return ConversationHandler.END # End if something is really wrong
+
+    # Clean up any potentially lingering state from previous steps
+    context.user_data.pop('search_type', None)
+    context.user_data.pop('search_results', None)
+    context.user_data.pop('chosen_item', None)
+
+    return SEARCH_TYPE # Go back to the start state
+
 async def cancel_conversation(update: Update, context: CallbackContext) -> int:
     """Cancels the current conversation."""
     query = update.callback_query
@@ -644,7 +682,8 @@ def main() -> None:
         },
         fallbacks=[
             CommandHandler('cancel', cancel_conversation),
-            CallbackQueryHandler(cancel_conversation, pattern='^cancel$') # General cancel from buttons
+            CallbackQueryHandler(cancel_conversation, pattern='^cancel$'), # Handles explicit cancel buttons
+            CallbackQueryHandler(unrecognized_callback_handler) # Catch-all for other callbacks
             ],
         per_user=True # Store conversation state per user
     )

@@ -1,5 +1,5 @@
 # Telegram Bot Token
-TELEGRAM_BOT_TOKEN = '7870925383:AAFKCVu2zT-HjKYYKl2S3vKFO95E0oswoJs'
+TELEGRAM_BOT_TOKEN = '7870925383:AAH_eCERC-cCTtLz0Gb657QZ7ndJhwDgo_k'
 
 # Sonarr Configuration
 SONARR_URL = 'http://192.168.1.137:8989' # Replace if Sonarr runs on a different port or IP
