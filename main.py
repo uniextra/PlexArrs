@@ -4,7 +4,7 @@ import json
 import sys, os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
-from qbittorrentapi import Client, LoginFailed, APIConnectionError
+import qbittorrentapi # Use the new library
 #import config
 
 # Enable logging
@@ -237,38 +237,51 @@ def add_movie_to_radarr(movie_info: dict) -> bool:
 # --- qBittorrent Functions ---
 
 def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
-    """Connects to qBittorrent and fetches the list of active downloads."""
+    """Connects to qBittorrent using qbittorrent-api and fetches the list of active downloads."""
     if not QBITTORRENT_URL:
         logger.error("QBITTORRENT_URL not configured.")
         return None, "qBittorrent URL not configured."
 
+    # Initialize client
+    client = qbittorrentapi.Client(
+        host=QBITTORRENT_URL,
+        username=QBITTORRENT_USERNAME,
+        password=QBITTORRENT_PASSWORD,
+        REQUESTS_ARGS={'timeout': (10, 20)} # connect timeout, read timeout
+    )
+
     try:
-        client = Client(
-            host=QBITTORRENT_URL,
-            username=QBITTORRENT_USERNAME,
-            password=QBITTORRENT_PASSWORD,
-            REQUESTS_ARGS={'timeout': (10, 20)} # connect timeout, read timeout
-        )
+        # Log in
         client.auth_log_in()
         logger.info(f"Successfully logged in to qBittorrent at {QBITTORRENT_URL}")
 
-        torrents = client.torrents_info()
+        # Get torrents info
+        # Filter can be added here, e.g., filter='downloading' or 'active'
+        torrents = client.torrents_info() # Gets all torrents by default
+
         if not torrents:
             return "No active downloads found.", None
 
         message_lines = ["*Current Downloads:*\n"]
         for torrent in torrents:
-            name = torrent.name
-            size_gb = torrent.size / (1024**3)
-            progress = torrent.progress * 100
-            state = torrent.state.replace('_', ' ').title() # e.g., downloading, stalledUP, checkingUP
-            dlspeed_mbs = torrent.dlspeed / (1024**2)
-            upspeed_kbs = torrent.upspeed / 1024
-            eta_minutes, eta_seconds = divmod(torrent.eta, 60)
-            eta_hours, eta_minutes = divmod(eta_minutes, 60)
-            eta_str = f"{int(eta_hours)}h {int(eta_minutes)}m" if eta_hours > 0 or eta_minutes > 0 else f"{int(eta_seconds)}s"
-            if "downloading" not in state.lower():
-                 eta_str = "∞" # Show infinity if not actively downloading
+            # Access torrent properties using dictionary access or attributes
+            name = torrent.get('name', 'N/A')
+            size_gb = torrent.get('size', 0) / (1024**3)
+            progress = torrent.get('progress', 0) * 100
+            state = torrent.get('state', 'N/A').replace('_', ' ').title() # e.g., downloading, stalledUP, checkingUP
+            dlspeed_mbs = torrent.get('dlspeed', 0) / (1024**2)
+            upspeed_kbs = torrent.get('upspeed', 0) / 1024
+            eta_seconds_total = torrent.get('eta', 0)
+
+            # Calculate ETA string
+            if eta_seconds_total == 8640000: # qbittorrent uses this value for infinity
+                eta_str = "∞"
+            elif "downloading" in state.lower() and eta_seconds_total > 0:
+                eta_minutes, eta_seconds = divmod(eta_seconds_total, 60)
+                eta_hours, eta_minutes = divmod(eta_minutes, 60)
+                eta_str = f"{int(eta_hours)}h {int(eta_minutes)}m" if eta_hours > 0 or eta_minutes > 0 else f"{int(eta_seconds)}s"
+            else:
+                 eta_str = "∞" # Show infinity if not actively downloading or ETA is 0
 
             # Escape Markdown characters in the name
             safe_name = name.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
@@ -283,18 +296,27 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
 
         return "\n".join(message_lines), None
 
-    except LoginFailed:
-        logger.error(f"qBittorrent login failed for user '{QBITTORRENT_USERNAME}'. Check credentials.")
+    except qbittorrentapi.LoginFailed as e:
+        logger.error(f"qBittorrent login failed for user '{QBITTORRENT_USERNAME}'. Check credentials. Error: {e}")
         return None, "qBittorrent login failed. Check credentials."
-    except APIConnectionError as e:
+    except qbittorrentapi.APIConnectionError as e:
         logger.error(f"Could not connect to qBittorrent at {QBITTORRENT_URL}: {e}")
         return None, f"Could not connect to qBittorrent: {e}"
+    except qbittorrentapi.exceptions.NotFound404Error as e:
+         logger.error(f"qBittorrent API endpoint not found (possibly wrong URL or API version mismatch?): {e}")
+         return None, "qBittorrent API endpoint not found. Check URL/version."
     except Exception as e:
-        logger.exception(f"An unexpected error occurred while fetching qBittorrent downloads: {e}")
-        return None, f"An unexpected error occurred: {e}"
+        # Catching potential requests exceptions as well if timeout occurs during API calls
+        if isinstance(e, requests.exceptions.RequestException):
+             logger.error(f"Network error communicating with qBittorrent at {QBITTORRENT_URL}: {e}")
+             return None, f"Network error connecting to qBittorrent: {e}"
+        else:
+             logger.exception(f"An unexpected error occurred while fetching qBittorrent downloads: {e}")
+             return None, f"An unexpected error occurred: {e}"
     finally:
+        # Logout (optional, client might handle session closure)
         try:
-            if 'client' in locals() and client.is_logged_in:
+            if client.is_logged_in:
                 client.auth_log_out()
                 logger.info("Logged out from qBittorrent.")
         except Exception as e:
