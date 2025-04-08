@@ -1,3 +1,3 @@
 python-telegram-bot[job-queue]>=20.0,<21.0
 requests>=2.20.0
-python-qbittorrent>=2.0.0
+python-qbittorrentapi>=2.0.0
