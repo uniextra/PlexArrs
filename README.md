@@ -1,12 +1,13 @@
-# Telegram Sonarr/Radarr Bot
+# Telegram Sonarr/Radarr/qBittorrent Bot
 
-This bot allows you to interact with your Sonarr and Radarr instances via Telegram to search for and add movies or series.
+This bot allows you to interact with your Sonarr and Radarr instances via Telegram to search for and add movies or series. It also includes functionality to view the status of your qBittorrent downloads.
 
 ## Prerequisites
 
 *   **Docker:** Must be installed on the host machine where Portainer is running or on a host managed by Portainer.
 *   **Portainer:** A running instance of Portainer connected to your Docker environment.
 *   **Sonarr & Radarr:** Running instances of Sonarr and Radarr accessible from where the bot container will run.
+*   **qBittorrent:** A running instance of qBittorrent with its Web UI enabled, accessible from where the bot container will run.
 *   **Telegram Bot Token:** Obtain a token by talking to the [BotFather](https://t.me/botfather) on Telegram.
 
 ## Configuration
@@ -20,6 +21,7 @@ This bot is configured entirely through environment variables when deployed via 
 *   `SONARR_API_KEY`: Your Sonarr API key (Found in Sonarr -> Settings -> General).
 *   `RADARR_URL`: Full URL to your Radarr instance (e.g., `http://192.168.1.100:7878`).
 *   `RADARR_API_KEY`: Your Radarr API key (Found in Radarr -> Settings -> General).
+*   `QBITTORRENT_URL`: Full URL to your qBittorrent Web UI (e.g., `http://192.168.1.137:9080`).
 
 **Optional Environment Variables:**
 
@@ -28,6 +30,8 @@ This bot is configured entirely through environment variables when deployed via 
 *   `RADARR_ROOT_FOLDER_ID`: The ID of the root folder in Radarr where new movies should be added. (Default: `1`)
 *   `RADARR_QUALITY_PROFILE_ID`: The ID of the quality profile to use when adding movies in Radarr. (Default: `1`)
 *   `ALLOWED_USER_IDS`: A comma-separated list of Telegram user IDs that are allowed to interact with the bot (e.g., `123456789,987654321`). If left empty or unset, all users will be allowed.
+*   `QBITTORRENT_USERNAME`: Your qBittorrent Web UI username (only required if authentication is enabled).
+*   `QBITTORRENT_PASSWORD`: Your qBittorrent Web UI password (only required if authentication is enabled).
 
 **Finding Sonarr/Radarr IDs:**
 
@@ -39,6 +43,13 @@ This bot is configured entirely through environment variables when deployed via 
     *   In Sonarr/Radarr, navigate to `Settings` -> `Profiles`.
     *   Click on the desired quality profile.
     *   The ID is the number at the end of the URL in your browser's address bar (e.g., `.../profile/edit/1` means the ID is `1`).
+
+## Features
+
+*   Search for Movies (via Radarr)
+*   Search for TV Series (via Sonarr)
+*   Add selected Movies/Series to Radarr/Sonarr
+*   View current download status from qBittorrent (`/downloads` command)
 
 ## Deployment using Portainer Stacks
 
