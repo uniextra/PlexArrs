@@ -4,6 +4,7 @@ import json
 import sys, os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
+import re
 import qbittorrentapi # Use the new library
 #import config
 
@@ -124,7 +125,9 @@ async def _restart_conversation(update: Update, context: CallbackContext, messag
 
     return SEARCH_TYPE
 
-
+def escape_markdown_v2(text: str) -> str:
+    escape_chars = r'_*\[\]()~`>#+\-=|{}.!'
+    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 # --- Sonarr Functions ---
 
@@ -263,35 +266,19 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
             return "No active downloads found.", None
 
         message_lines = ["*Current Downloads:*\n"]
+        bar_len = 12  # Longitud visual de la barra
+
         for torrent in torrents:
-            # Access torrent properties using dictionary access or attributes
-            name = torrent.get('name', 'N/A')
-            size_gb = torrent.get('size', 0) / (1024**3)
-            progress = torrent.get('progress', 0) * 100
-            state = torrent.get('state', 'N/A').replace('_', ' ').title() # e.g., downloading, stalledUP, checkingUP
-            dlspeed_mbs = torrent.get('dlspeed', 0) / (1024**2)
-            upspeed_kbs = torrent.get('upspeed', 0) / 1024
-            eta_seconds_total = torrent.get('eta', 0)
+            name = torrent.name
+            progress = torrent.progress  # 0.0 to 1.0
+            percent = int(progress * 100)
+            size_gb = round(torrent.size / (1024 ** 3), 2)
 
-            # Calculate ETA string
-            if eta_seconds_total == 8640000: # qbittorrent uses this value for infinity
-                eta_str = "∞"
-            elif "downloading" in state.lower() and eta_seconds_total > 0:
-                eta_minutes, eta_seconds = divmod(eta_seconds_total, 60)
-                eta_hours, eta_minutes = divmod(eta_minutes, 60)
-                eta_str = f"{int(eta_hours)}h {int(eta_minutes)}m" if eta_hours > 0 or eta_minutes > 0 else f"{int(eta_seconds)}s"
-            else:
-                 eta_str = "∞" # Show infinity if not actively downloading or ETA is 0
+            filled_len = int(progress * bar_len)
+            empty_len = bar_len - filled_len
+            bar = '█' * filled_len + '░' * empty_len
 
-            # Escape Markdown characters in the name
-            safe_name = name.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
-
-            line = (
-                f"• `{safe_name[:40]}{'...' if len(safe_name) > 40 else ''}`\n"
-                f"  `↳` Status: {state} ({progress:.1f}%)\n"
-                f"  `↳` Size: {size_gb:.2f} GB\n"
-                f"  `↳` ↓ {dlspeed_mbs:.2f} MB/s | ↑ {upspeed_kbs:.1f} KB/s | ETA: {eta_str}"
-            )
+            line = f"{name} [{bar}] {percent}% - {size_gb} GB"
             message_lines.append(line)
 
         return "\n".join(message_lines), None
@@ -335,12 +322,14 @@ async def downloads_command(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("Fetching download status from qBittorrent...")
 
     message, error = get_qbittorrent_downloads()
-
+    message = escape_markdown_v2(message)
     if error:
         await update.message.reply_text(f"Error: {error}")
     elif message:
         # Split message if too long for Telegram
         max_len = 4096
+        if len(message) == 0:
+            await update.message.reply_text('No active Downloads', parse_mode='MarkdownV2')
         if len(message) > max_len:
              for i in range(0, len(message), max_len):
                   await update.message.reply_text(message[i:i+max_len], parse_mode='MarkdownV2')
