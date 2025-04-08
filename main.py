@@ -4,6 +4,7 @@ import json
 import sys, os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
+from qbittorrentapi import Client, LoginFailed, APIConnectionError
 #import config
 
 # Enable logging
@@ -23,6 +24,10 @@ SONARR_URL = os.getenv('SONARR_URL')
 SONARR_API_KEY = os.getenv('SONARR_API_KEY')
 RADARR_URL = os.getenv('RADARR_URL')
 RADARR_API_KEY = os.getenv('RADARR_API_KEY')
+QBITTORRENT_URL = os.getenv('QBITTORRENT_URL')
+QBITTORRENT_USERNAME = os.getenv('QBITTORRENT_USERNAME')
+QBITTORRENT_PASSWORD = os.getenv('QBITTORRENT_PASSWORD')
+
 
 # Load and convert integer variables with defaults or error handling
 try:
@@ -229,7 +234,100 @@ def add_movie_to_radarr(movie_info: dict) -> bool:
             logger.error(f"Radarr response: {response.text}")
         return False
 
+# --- qBittorrent Functions ---
+
+def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
+    """Connects to qBittorrent and fetches the list of active downloads."""
+    if not QBITTORRENT_URL:
+        logger.error("QBITTORRENT_URL not configured.")
+        return None, "qBittorrent URL not configured."
+
+    try:
+        client = Client(
+            host=QBITTORRENT_URL,
+            username=QBITTORRENT_USERNAME,
+            password=QBITTORRENT_PASSWORD,
+            REQUESTS_ARGS={'timeout': (10, 20)} # connect timeout, read timeout
+        )
+        client.auth_log_in()
+        logger.info(f"Successfully logged in to qBittorrent at {QBITTORRENT_URL}")
+
+        torrents = client.torrents_info()
+        if not torrents:
+            return "No active downloads found.", None
+
+        message_lines = ["*Current Downloads:*\n"]
+        for torrent in torrents:
+            name = torrent.name
+            size_gb = torrent.size / (1024**3)
+            progress = torrent.progress * 100
+            state = torrent.state.replace('_', ' ').title() # e.g., downloading, stalledUP, checkingUP
+            dlspeed_mbs = torrent.dlspeed / (1024**2)
+            upspeed_kbs = torrent.upspeed / 1024
+            eta_minutes, eta_seconds = divmod(torrent.eta, 60)
+            eta_hours, eta_minutes = divmod(eta_minutes, 60)
+            eta_str = f"{int(eta_hours)}h {int(eta_minutes)}m" if eta_hours > 0 or eta_minutes > 0 else f"{int(eta_seconds)}s"
+            if "downloading" not in state.lower():
+                 eta_str = "∞" # Show infinity if not actively downloading
+
+            # Escape Markdown characters in the name
+            safe_name = name.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+
+            line = (
+                f"• `{safe_name[:40]}{'...' if len(safe_name) > 40 else ''}`\n"
+                f"  `↳` Status: {state} ({progress:.1f}%)\n"
+                f"  `↳` Size: {size_gb:.2f} GB\n"
+                f"  `↳` ↓ {dlspeed_mbs:.2f} MB/s | ↑ {upspeed_kbs:.1f} KB/s | ETA: {eta_str}"
+            )
+            message_lines.append(line)
+
+        return "\n".join(message_lines), None
+
+    except LoginFailed:
+        logger.error(f"qBittorrent login failed for user '{QBITTORRENT_USERNAME}'. Check credentials.")
+        return None, "qBittorrent login failed. Check credentials."
+    except APIConnectionError as e:
+        logger.error(f"Could not connect to qBittorrent at {QBITTORRENT_URL}: {e}")
+        return None, f"Could not connect to qBittorrent: {e}"
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred while fetching qBittorrent downloads: {e}")
+        return None, f"An unexpected error occurred: {e}"
+    finally:
+        try:
+            if 'client' in locals() and client.is_logged_in:
+                client.auth_log_out()
+                logger.info("Logged out from qBittorrent.")
+        except Exception as e:
+            logger.warning(f"Failed to log out from qBittorrent: {e}")
+
+
 # --- Telegram Bot Handlers ---
+
+async def downloads_command(update: Update, context: CallbackContext) -> None:
+    """Handles the /downloads command."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await update.message.reply_text("Sorry, you are not authorized to use this bot.")
+        return
+
+    await update.message.reply_text("Fetching download status from qBittorrent...")
+
+    message, error = get_qbittorrent_downloads()
+
+    if error:
+        await update.message.reply_text(f"Error: {error}")
+    elif message:
+        # Split message if too long for Telegram
+        max_len = 4096
+        if len(message) > max_len:
+             for i in range(0, len(message), max_len):
+                  await update.message.reply_text(message[i:i+max_len], parse_mode='MarkdownV2')
+        else:
+             await update.message.reply_text(message, parse_mode='MarkdownV2')
+    else:
+        # This case should ideally be handled by get_qbittorrent_downloads returning a specific message
+        await update.message.reply_text("Could not retrieve download status.")
+
 
 async def start(update: Update, context: CallbackContext) -> int:
     """Sends a welcome message and asks what to search for."""
@@ -270,7 +368,7 @@ async def search_type_chosen(update: Update, context: CallbackContext) -> int:
         return await _restart_conversation(update, context, "Search cancelled.")
 
     context.user_data['search_type'] = search_type
-    await query.edit_message_text(f"Okay, searching for a <b>{search_type}<b/>. Please enter the title:")
+    await query.edit_message_text(f"Okay, searching for a {search_type}. Please enter the title:")
     return SEARCH_QUERY
 
 #######################
@@ -639,7 +737,11 @@ async def unknown_state_handler(update: Update, context: CallbackContext) -> int
 def main() -> None:
     """Start the bot."""
     # --- Environment Variable Check ---
-    required_vars = ['TELEGRAM_BOT_TOKEN', 'SONARR_URL', 'SONARR_API_KEY', 'RADARR_URL', 'RADARR_API_KEY']
+    required_vars = [
+        'TELEGRAM_BOT_TOKEN', 'SONARR_URL', 'SONARR_API_KEY', 'RADARR_URL', 'RADARR_API_KEY',
+        'QBITTORRENT_URL' # Add QBITTORRENT_URL check
+        # Username/Password are optional depending on qBittorrent setup, so not strictly required here
+    ]
     missing_vars = [var for var in required_vars if not globals().get(var)]
     if missing_vars:
         logger.critical(f"Missing required environment variables: {', '.join(missing_vars)}. Exiting.")
@@ -686,6 +788,7 @@ def main() -> None:
 
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("downloads", downloads_command)) # Add the new command handler
     application.add_handler(CallbackQueryHandler(unknown_state_handler))
 
 
