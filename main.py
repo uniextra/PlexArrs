@@ -269,7 +269,7 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
         bar_len = 12  # Longitud visual de la barra
 
         for torrent in torrents:
-            name = torrent.name
+            name = torrent.name[:26]  # Truncate to 26 characters
             progress = torrent.progress  # 0.0 to 1.0
             percent = int(progress * 100)
             size_gb = round(torrent.size / (1024 ** 3), 2)
@@ -278,7 +278,7 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
             empty_len = bar_len - filled_len
             bar = '█' * filled_len + '░' * empty_len
 
-            line = f"{name} [{bar}] {percent}% - {size_gb} GB"
+            line = f"{name} [{bar}] {percent}% \- {size_gb} GB"
             message_lines.append(line)
 
         return "\n".join(message_lines), None
@@ -322,7 +322,7 @@ async def downloads_command(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("Fetching download status from qBittorrent...")
 
     message, error = get_qbittorrent_downloads()
-    message = escape_markdown_v2(message)
+    #message = escape_markdown_v2(message)
     if error:
         await update.message.reply_text(f"Error: {error}")
     elif message:
