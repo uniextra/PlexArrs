@@ -2,7 +2,7 @@ import logging
 import requests
 import json
 import sys, os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
 import re
 import qbittorrentapi # Use the new library
@@ -10,7 +10,7 @@ import qbittorrentapi # Use the new library
 
 # Enable logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.WARNING
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d - %(funcName)s()] %(message)s', level=logging.WARNING
 )
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,9 @@ try:
     RADARR_QUALITY_PROFILE_ID = int(os.getenv('RADARR_QUALITY_PROFILE_ID', '1')) # Default to 1 if not set
 except ValueError as e:
     logger.error(f"Error converting numeric environment variable to int: {e}. Please check values.")
+    exc_type, exc_obj, exc_tb = sys.exc_info()
+    fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+    logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
     # Decide how to handle: exit, use default, raise error? Let's log and potentially fail later.
     # For now, we'll let the defaults above stand, but a production app might exit here.
     pass # Or raise SystemExit("Invalid numeric environment variable.")
@@ -48,8 +51,11 @@ ALLOWED_USER_IDS = []
 if allowed_user_ids_str:
     try:
         ALLOWED_USER_IDS = [int(user_id.strip()) for user_id in allowed_user_ids_str.split(',') if user_id.strip()]
-    except ValueError:
+    except ValueError as e: # Added 'as e' to capture the exception for logging
         logger.error(f"Invalid format for ALLOWED_USER_IDS environment variable. Should be comma-separated integers. Value: '{allowed_user_ids_str}'")
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
         # Decide how to handle: ignore, allow all, exit? Let's log and proceed with an empty list (no restrictions).
         ALLOWED_USER_IDS = [] # Reset to empty on error
 
@@ -84,46 +90,35 @@ def make_api_request(base_url: str, api_key: str, endpoint: str, params: dict = 
         if hasattr(e, 'response') and e.response is not None:
             error_details += f" Status Code: {e.response.status_code}. Response: {e.response.text}"
         logger.error(error_details)
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
         return None
     except json.JSONDecodeError as e:
         logger.error(f"Failed to decode JSON response from {url}: {e}")
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
         return None
 
 async def _restart_conversation(update: Update, context: CallbackContext, message: str) -> int:
     """Cleans up user data and sends the initial prompt, restarting the conversation."""
     logger.info(f"Restarting conversation: {message}")
+    
     # Clean up user data defensively
     for key in ['search_type', 'search_results', 'chosen_item']:
         context.user_data.pop(key, None)
 
-    keyboard = [
-        [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
-        [InlineKeyboardButton("📺 Series", callback_data='series')],
-        #[InlineKeyboardButton("❌ Cancel", callback_data='cancel')], # This cancel button will now restart
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    # Determine how to send the message (edit or new)
     query = update.callback_query
     if query:
-        try:
-            # Try editing the existing message first
-            await query.edit_message_text(f"{message}\nWhat would you like to search for?", reply_markup=reply_markup)
-        except Exception as e:
-            logger.warning(f"Could not edit message on restart: {e}. Sending new message.")
-            # If editing fails (e.g., message too old), send a new message via the original message context
-            try:
-                await query.message.reply_text(f"{message}\nWhat would you like to search for?", reply_markup=reply_markup)
-            except Exception as e2:
-                 logger.error(f"Could not send new message on restart either: {e2}")
-
-    elif update.message:
-        await update.message.reply_text(f"{message}\nWhat would you like to search for?", reply_markup=reply_markup)
+        await query.answer()
+        await query.edit_message_text("Operation cancelled.")
     else:
-        # Fallback if no context is available (should be rare)
-        logger.error("Could not send restart message: No query or message context.")
+        await update.message.reply_text("Operation cancelled.")
 
-    return SEARCH_TYPE
+    await context.bot.send_message(chat_id=update.effective_chat.id,text="Envia el comando cancel",reply_markup=reply_markup)
+
+    return ConversationHandler.END # Return the correct state to handle button clicks
 
 def escape_markdown_v2(text: str) -> str:
     escape_chars = r'_*\[\]()~`>#+\-=|{}.!'
@@ -134,6 +129,7 @@ def escape_markdown_v2(text: str) -> str:
 def search_sonarr(query: str) -> list:
     """Searches Sonarr for a series."""
     if not SONARR_URL or not SONARR_API_KEY:
+        # Cannot get traceback here easily as no exception is caught
         logger.error("Sonarr URL or API Key not configured in environment variables.")
         return []
     return make_api_request(SONARR_URL, SONARR_API_KEY, 'series/lookup', {'term': query}) or []
@@ -141,6 +137,7 @@ def search_sonarr(query: str) -> list:
 def add_series_to_sonarr(series_info: dict) -> bool:
     """Adds a series to Sonarr."""
     if not SONARR_URL or not SONARR_API_KEY:
+        # Cannot get traceback here easily as no exception is caught
         logger.error("Sonarr URL or API Key not configured in environment variables.")
         return False
     payload = {
@@ -162,9 +159,11 @@ def add_series_to_sonarr(series_info: dict) -> bool:
         if target_folder:
             payload['rootFolderPath'] = target_folder
         else:
+            # Cannot get traceback here easily as no exception is caught
             logger.error(f"Sonarr Root Folder ID {SONARR_ROOT_FOLDER_ID} not found in Sonarr's API response.") # Use loaded env var
             return False
     else:
+        # Cannot get traceback here easily as no exception is caught
         logger.error("Could not retrieve Sonarr root folders via API.")
         return False
 
@@ -180,7 +179,11 @@ def add_series_to_sonarr(series_info: dict) -> bool:
         return True
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to add series '{series_info['title']}' to Sonarr: {e}")
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
         if response is not None:
+            # Cannot get traceback here easily as no exception is caught
             logger.error(f"Sonarr response: {response.text}")
         return False
 
@@ -190,6 +193,7 @@ def add_series_to_sonarr(series_info: dict) -> bool:
 def search_radarr(query: str) -> list:
     """Searches Radarr for a movie."""
     if not RADARR_URL or not RADARR_API_KEY:
+        # Cannot get traceback here easily as no exception is caught
         logger.error("Radarr URL or API Key not configured in environment variables.")
         return []
     return make_api_request(RADARR_URL, RADARR_API_KEY, 'movie/lookup', {'term': query}) or []
@@ -197,6 +201,7 @@ def search_radarr(query: str) -> list:
 def add_movie_to_radarr(movie_info: dict) -> bool:
     """Adds a movie to Radarr."""
     if not RADARR_URL or not RADARR_API_KEY:
+        # Cannot get traceback here easily as no exception is caught
         logger.error("Radarr URL or API Key not configured in environment variables.")
         return False
     payload = {
@@ -216,9 +221,11 @@ def add_movie_to_radarr(movie_info: dict) -> bool:
         if target_folder:
             payload['rootFolderPath'] = target_folder
         else:
+            # Cannot get traceback here easily as no exception is caught
             logger.error(f"Radarr Root Folder ID {RADARR_ROOT_FOLDER_ID} not found in Radarr's API response.") # Use loaded env var
             return False
     else:
+        # Cannot get traceback here easily as no exception is caught
         logger.error("Could not retrieve Radarr root folders via API.")
         return False
 
@@ -233,7 +240,11 @@ def add_movie_to_radarr(movie_info: dict) -> bool:
         return True
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to add movie '{movie_info['title']}' to Radarr: {e}")
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
         if response is not None:
+            # Cannot get traceback here easily as no exception is caught
             logger.error(f"Radarr response: {response.text}")
         return False
 
@@ -242,6 +253,7 @@ def add_movie_to_radarr(movie_info: dict) -> bool:
 def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
     """Connects to qBittorrent using qbittorrent-api and fetches the list of active downloads."""
     if not QBITTORRENT_URL:
+        # Cannot get traceback here easily as no exception is caught
         logger.error("QBITTORRENT_URL not configured.")
         return None, "qBittorrent URL not configured."
 
@@ -263,7 +275,7 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
         torrents = client.torrents_info() # Gets all torrents by default
 
         if not torrents:
-            return "No active downloads found.", None
+            return "No active downloads found\.", None
 
         message_lines = ["*Current Downloads:*\n"]
         bar_len = 10  # Longitud visual de la barra
@@ -272,7 +284,7 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
             name = torrent.name[:26]  # Truncate to 26 characters
             progress = torrent.progress  # 0.0 to 1.0
             percent = int(progress * 100)
-            size_gb = round(torrent.size / (1024 ** 3), 0)
+            size_gb = round(torrent.size / (1024 ** 3), 2)
 
             filled_len = int(progress * bar_len)
             empty_len = bar_len - filled_len
@@ -286,20 +298,36 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
 
     except qbittorrentapi.LoginFailed as e:
         logger.error(f"qBittorrent login failed for user '{QBITTORRENT_USERNAME}'. Check credentials. Error: {e}")
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
         return None, "qBittorrent login failed. Check credentials."
     except qbittorrentapi.APIConnectionError as e:
         logger.error(f"Could not connect to qBittorrent at {QBITTORRENT_URL}: {e}")
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
         return None, f"Could not connect to qBittorrent: {e}"
     except qbittorrentapi.exceptions.NotFound404Error as e:
          logger.error(f"qBittorrent API endpoint not found (possibly wrong URL or API version mismatch?): {e}")
+         exc_type, exc_obj, exc_tb = sys.exc_info()
+         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+         logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
          return None, "qBittorrent API endpoint not found. Check URL/version."
     except Exception as e:
         # Catching potential requests exceptions as well if timeout occurs during API calls
         if isinstance(e, requests.exceptions.RequestException):
              logger.error(f"Network error communicating with qBittorrent at {QBITTORRENT_URL}: {e}")
+             exc_type, exc_obj, exc_tb = sys.exc_info()
+             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+             logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
              return None, f"Network error connecting to qBittorrent: {e}"
         else:
-             logger.exception(f"An unexpected error occurred while fetching qBittorrent downloads: {e}")
+             # Changed from logger.exception to logger.error + manual traceback
+             logger.error(f"An unexpected error occurred while fetching qBittorrent downloads: {e}")
+             exc_type, exc_obj, exc_tb = sys.exc_info()
+             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+             logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
              return None, f"An unexpected error occurred: {e}"
     finally:
         # Logout (optional, client might handle session closure)
@@ -324,6 +352,8 @@ async def downloads_command(update: Update, context: CallbackContext) -> None:
 
     message, error = get_qbittorrent_downloads()
     
+    print('--------------------------',message)
+
     if error:
         await update.message.reply_text(f"Error: {error}")
     elif message:
@@ -335,7 +365,14 @@ async def downloads_command(update: Update, context: CallbackContext) -> None:
              for i in range(0, len(message), max_len):
                   await update.message.reply_text(message[i:i+max_len], parse_mode='MarkdownV2')
         else:
-             await update.message.reply_text(message, parse_mode='MarkdownV2')
+            try:
+                await update.message.reply_text(message, parse_mode='MarkdownV2')
+            except Exception as e:
+                logger.error(f"Failed to send message: {e} {message}")
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
+                await update.message.reply_text("Failed to send download status. Check logs for details.")
     else:
         # This case should ideally be handled by get_qbittorrent_downloads returning a specific message
         await update.message.reply_text("Could not retrieve download status.")
@@ -412,11 +449,12 @@ async def _render_search_results(update: Update, context: CallbackContext, resul
 
         return CHOOSE_ITEM
     except (ValueError, IndexError) as e:
+        # This block already had the manual traceback logging, ensuring it remains
         logger.error(f"Error _render_search_results: {e}")
         # Use the restart helper on error
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-        logging.error("Error: {} {} {} {}".format(str(e),exc_type, fname, exc_tb.tb_lineno))  
+        logging.error("Error: {} {} {} {}".format(str(e),exc_type, fname, exc_tb.tb_lineno))
 ##########################
 
 
@@ -544,11 +582,12 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
         return CONFIRM_ADD
 
     except (ValueError, IndexError) as e:
+        # This block already had the manual traceback logging, ensuring it remains
         logger.error(f"Error processing item choice: {e}")
         # Use the restart helper on error
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-        logging.error("Error: {} {} {} {}".format(str(e),exc_type, fname, exc_tb.tb_lineno))        
+        logging.error("Error: {} {} {} {}".format(str(e), exc_type, fname, exc_tb.tb_lineno)) # Corrected syntax: removed extra '}'
         return await _restart_conversation(update, context, "Sorry, there was an error processing your choice.")
 
 
@@ -576,6 +615,8 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
 
         except Exception as e:
             logger.warning(f"Could not delete message on cancel: {e}. Trying edit instead.")
+            # Note: The original code logged the traceback info here using logging.error,
+            # even though the primary log was logger.warning. Keeping that pattern.
             exc_type, exc_obj, exc_tb = sys.exc_info()
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             logging.error("Error: {} {} {} {}".format(str(e),exc_type, fname, exc_tb.tb_lineno))
@@ -584,6 +625,10 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
                  await query.edit_message_text("Okay, I won't add it. Operation cancelled.")
             except Exception as e2:
                  logger.error(f"Could not edit message on cancel either: {e2}")
+                 # Add traceback for the inner exception
+                 exc_type_inner, exc_obj_inner, exc_tb_inner = sys.exc_info()
+                 fname_inner = os.path.split(exc_tb_inner.tb_frame.f_code.co_filename)[1]
+                 logging.error(f"Traceback Info: Type={exc_type_inner}, File={fname_inner}, Line={exc_tb_inner.tb_lineno}")
                  # Final fallback: send new message if possible
                  if update_message:
                       await update_message.reply_text("Okay, I won't add it. Operation cancelled.")
@@ -608,6 +653,9 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
                  await query.edit_message_text("Cancelling search...")
             except Exception as e2:
                  logger.error(f"Could not edit message on cancel_add (restart) either: {e2}")
+                 exc_type, exc_obj, exc_tb = sys.exc_info()
+                 fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                 logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
         # Use the restart helper to go back to the very beginning
         return await _restart_conversation(update, context, "Search cancelled.")
 
@@ -622,6 +670,7 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
     update_message = update.effective_message # Use effective_message for replies
 
     if not chosen_item or not search_type or not update_message:
+        # Cannot get traceback here easily as no exception is caught
         logger.error("Missing context (chosen_item, search_type, or message) in add_item_confirmed.")
         # Try to delete the original message if query exists
         if query:
@@ -653,6 +702,9 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
         )
     except Exception as e:
         logger.error(f"Failed to send 'Adding...' status message: {e}")
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
         # Cannot proceed without status message to update
         # Use the restart helper if sending status message fails
         return await _restart_conversation(update, context, "Failed to send status message.")
@@ -697,6 +749,9 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
             )
         except Exception as e:
             logger.error(f"Failed to edit status message: {e}. Sending new message instead.")
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
             # Fallback: send result as a new message if editing fails
             await update_message.reply_text(result_text)
     else:
@@ -738,12 +793,23 @@ async def cancel_conversation_and_restart(update: Update, context: CallbackConte
 async def unknown_command(update: Update, context: CallbackContext) -> None:
     """Handles unknown commands during the conversation."""
     await update.message.reply_text("Sorry, I didn't understand that command. Use /cancel to stop or continue the current process.")
+    ConversationHandler.END
     # We don't change the state here, let the user retry or cancel.
 
 async def unknown_state_handler(update: Update, context: CallbackContext) -> int:
     """Handles any unexpected message or callback query in any state."""
-    logger.warning(f"Unhandled update in state {context.user_data.get('_state')}: {update}")
-    return await _restart_conversation(update, context, "Something went wrong or I received unexpected input. Let's start over.")
+    current_state = context.user_data.get('_state')
+    logger.warning(f"Unhandled update in state {current_state}: {update}")
+    ConversationHandler.END # Ensure conversation state is cleared
+
+    # Determine if it was likely an old button press
+    if update.callback_query and current_state is None:
+        message = "It looks like you clicked a button from a previous search. That context is gone, so let's start a new search."
+    else:
+        message = "Something went wrong or I received unexpected input. Let's start over."
+
+    return await _restart_conversation(update, context, message)
+
 
 
 def main() -> None:
@@ -802,6 +868,24 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("downloads", downloads_command)) # Add the new command handler
     application.add_handler(CallbackQueryHandler(unknown_state_handler))
+
+    # Set bot commands for the menu button
+    commands = [
+        BotCommand("start", "Iniciar una nueva búsqueda"),
+        BotCommand("downloads", "Ver descargas actuales"),
+        BotCommand("help", "Mostrar ayuda"),
+        BotCommand("cancel", "Cancelar la operación actual"),
+    ]
+    # Use run_sync for potentially blocking operations if needed, but set_my_commands is usually quick
+    # await application.bot.set_my_commands(commands)
+    # For simplicity in this context, let's assume direct call is okay or handle potential blocking if necessary
+    # Using a synchronous approach within the async main function requires care.
+    # A common pattern is to run it in a separate thread or use asyncio's run_in_executor.
+    # However, python-telegram-bot v20+ handles this internally more gracefully.
+    # Let's try the direct await first. If it causes issues, we might need adjustment.
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(application.bot.set_my_commands(commands))
+    logger.info("Bot commands set.")
 
 
     # Run the bot until the user presses Ctrl-C
