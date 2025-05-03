@@ -104,7 +104,7 @@ def make_api_request(base_url: str, api_key: str, endpoint: str, params: dict = 
 async def _restart_conversation(update: Update, context: CallbackContext, message: str) -> int:
     """Cleans up user data and sends the initial prompt, restarting the conversation."""
     logger.info(f"Restarting conversation: {message}")
-    
+
     # Clean up user data defensively
     for key in ['search_type', 'search_results', 'chosen_item']:
         context.user_data.pop(key, None)
@@ -351,7 +351,7 @@ async def downloads_command(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("Fetching download status from qBittorrent...")
 
     message, error = get_qbittorrent_downloads()
-    
+
     print('--------------------------',message)
 
     if error:
@@ -431,7 +431,7 @@ async def _render_search_results(update: Update, context: CallbackContext, resul
             title = item.get('title', 'N/A')
             year = item.get('year', '')
             button_text = f"{title} ({year})" if year else title
-            
+
             keyboard.append([InlineKeyboardButton(button_text, callback_data=f'choose_{i}')])
 
         keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data='cancel')])
@@ -856,9 +856,12 @@ def main() -> None:
             CommandHandler('cancel', cancel_conversation), # Explicit /cancel command still ends the conversation
             CallbackQueryHandler(cancel_conversation_and_restart, pattern='^cancel$'), # Inline cancel buttons restart
             # Add more robust fallbacks
-            MessageHandler(filters.COMMAND, unknown_command), # Handle unknown commands within the conversation
-            MessageHandler(filters.ALL, unknown_state_handler), # Handle unexpected text/messages
-            CallbackQueryHandler(unknown_state_handler) # Handle unexpected callbacks
+            MessageHandler(filters.COMMAND, cancel_conversation), # Handle unknown commands within the conversation
+            MessageHandler(filters.ALL, cancel_conversation), # Handle unexpected text/messages
+            CallbackQueryHandler(cancel_conversation) # Handle unexpected callbacks            
+            # MessageHandler(filters.COMMAND, unknown_command), # Handle unknown commands within the conversation
+            # MessageHandler(filters.ALL, unknown_state_handler), # Handle unexpected text/messages
+            # CallbackQueryHandler(unknown_state_handler) # Handle unexpected callbacks
             ],
         # Let's keep per_user=True for now, it's generally safer for conversation state management.
         per_user=True # Store conversation state per user
@@ -867,7 +870,7 @@ def main() -> None:
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("downloads", downloads_command)) # Add the new command handler
-    application.add_handler(CallbackQueryHandler(unknown_state_handler))
+    application.add_handler(CallbackQueryHandler(cancel_conversation)) #unknown_state_handler
 
     # Set bot commands for the menu button
     commands = [
