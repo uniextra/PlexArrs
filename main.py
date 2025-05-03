@@ -783,8 +783,9 @@ async def cancel_conversation(update: Update, context: CallbackContext) -> int:
     context.user_data.pop('search_type', None)
     context.user_data.pop('search_results', None)
     context.user_data.pop('chosen_item', None)
-
-    return ConversationHandler.END
+    
+    start(Update, context)
+    #return ConversationHandler.END
 
 async def cancel_conversation_and_restart(update: Update, context: CallbackContext) -> int:
     """Handles 'cancel' button presses within the conversation, restarting it."""
