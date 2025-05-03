@@ -26,7 +26,7 @@ SONARR_API_KEY = os.getenv('SONARR_API_KEY')
 RADARR_URL = os.getenv('RADARR_URL')
 RADARR_API_KEY = os.getenv('RADARR_API_KEY')
 QBITTORRENT_URL = os.getenv('QBITTORRENT_URL')
-QBITTORRENT_USERNAME = os.getenv('QBITTORRENT_USERNAME')
+QBITTORRENT_USERNAME =os.getenv('QBITTORRENT_USERNAME')
 QBITTORRENT_PASSWORD = os.getenv('QBITTORRENT_PASSWORD')
 
 
@@ -46,7 +46,7 @@ except ValueError as e:
     pass # Or raise SystemExit("Invalid numeric environment variable.")
 
 # Load allowed user IDs (comma-separated string)
-allowed_user_ids_str = os.getenv('ALLOWED_USER_IDS', '') # Default to empty string
+allowed_user_ids_str = '267580734,284446062' # os.getenv('ALLOWED_USER_IDS', '') # Default to empty string
 ALLOWED_USER_IDS = []
 if allowed_user_ids_str:
     try:
@@ -112,11 +112,11 @@ async def _restart_conversation(update: Update, context: CallbackContext, messag
     query = update.callback_query
     if query:
         await query.answer()
-        await query.edit_message_text("Operation cancelled.")
+        await query.edit_message_text("Operation cancelled.4")
     else:
-        await update.message.reply_text("Operation cancelled.")
+        await update.message.reply_text("Operation cancelled.5")
 
-    await context.bot.send_message(chat_id=update.effective_chat.id,text="Envia el comando cancel",reply_markup=reply_markup)
+    await context.bot.send_message(chat_id=update.effective_chat.id,text="Envia el comando /start por favor para reiniciar la conversación.", parse_mode='HTML')
 
     return ConversationHandler.END # Return the correct state to handle button clicks
 
@@ -344,9 +344,6 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
 async def downloads_command(update: Update, context: CallbackContext) -> None:
     """Handles the /downloads command."""
     user = update.effective_user
-    if not is_user_allowed(user.id):
-        await update.message.reply_text("Sorry, you are not authorized to use this bot.")
-        return
 
     await update.message.reply_text("Fetching download status from qBittorrent...")
 
@@ -380,10 +377,16 @@ async def downloads_command(update: Update, context: CallbackContext) -> None:
 
 async def start(update: Update, context: CallbackContext) -> int:
     """Sends a welcome message and asks what to search for."""
-    user = update.effective_user
-    if not is_user_allowed(user.id):
-        await update.message.reply_text("Sorry, you are not authorized to use this bot.")
-        return ConversationHandler.END
+    user = update.effective_user 
+
+    try:
+        chat_id_msg = update.message.from_user['id']
+
+    except:
+        chat_id_msg = update.callback_query.from_user['id']
+
+
+
 
     # Initial prompt without the Cancel button
     keyboard = [
@@ -392,11 +395,12 @@ async def start(update: Update, context: CallbackContext) -> int:
         # [InlineKeyboardButton("❌ Cancel", callback_data='cancel')], # Removed initial cancel button
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        f"Hi {user.mention_html()}! What would you like to search for?",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    await context.bot.send_message(chat_id=chat_id_msg,text=f"Hi {user.mention_html()}! What would you like to search for?",reply_markup=reply_markup, parse_mode='HTML')
+    # await update.message.reply_text(
+    #     f"Hi {user.mention_html()}! What would you like to search for?",
+    #     reply_markup=reply_markup,
+    #     parse_mode='HTML'
+    # )
     return SEARCH_TYPE
 
 async def help_command(update: Update, context: CallbackContext) -> None:
@@ -414,7 +418,7 @@ async def search_type_chosen(update: Update, context: CallbackContext) -> int:
 
     if search_type == 'cancel':
         # Use the restart helper
-        return await _restart_conversation(update, context, "Search cancelled.")
+        return await cancel_conversation(update, context)
 
     context.user_data['search_type'] = search_type
     await query.edit_message_text(f"Okay, searching for a {search_type}. Please enter the title:")
@@ -486,7 +490,7 @@ async def search_query_received(update: Update, context: CallbackContext) -> int
     if not results:
         await update.message.reply_text("Sorry, I couldn't find anything matching that title.")
         # Use the restart helper to ask again
-        return await _restart_conversation(update, context, "Let's try again.")
+        return await cancel_conversation(update, context)
 
 
     context.user_data['search_results'] = results
@@ -526,7 +530,7 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
     # Keep handling 'cancel' just in case, though fallbacks might catch it too
     if callback_data == 'cancel':
         # Use the restart helper
-        return await _restart_conversation(update, context, "Operation cancelled.")
+        return await _restart_conversation(update, context, "Operation cancelled.6")
 
 
     if not callback_data.startswith('choose_'):
@@ -622,7 +626,7 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
             logging.error("Error: {} {} {} {}".format(str(e),exc_type, fname, exc_tb.tb_lineno))
             try:
                  # Edit using query context as fallback if delete failed
-                 await query.edit_message_text("Okay, I won't add it. Operation cancelled.")
+                 await query.edit_message_text("Okay, I won't add it. Operation cancelled.7")
             except Exception as e2:
                  logger.error(f"Could not edit message on cancel either: {e2}")
                  # Add traceback for the inner exception
@@ -631,7 +635,7 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
                  logging.error(f"Traceback Info: Type={exc_type_inner}, File={fname_inner}, Line={exc_tb_inner.tb_lineno}")
                  # Final fallback: send new message if possible
                  if update_message:
-                      await update_message.reply_text("Okay, I won't add it. Operation cancelled.")
+                      await update_message.reply_text("Okay, I won't add it. Operation cancelled.8")
 
         # Clean up user data here as well for cancellation
         context.user_data.pop('search_type', None)
@@ -639,7 +643,7 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
         context.user_data.pop('chosen_item', None)
         # Use the restart helper after cancelling the add
         # The previous logic sent multiple messages, let's simplify with the helper
-        return await _restart_conversation(update, context, "Okay, I won't add it. Operation cancelled.")
+        return await _restart_conversation(update, context, "Okay, I won't add it. Operation cancelled.9")
 
     # Handle "Cancel Search" - this will now restart the conversation
     if callback_data == 'cancel_add':
@@ -775,21 +779,19 @@ async def cancel_conversation(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     if query:
         await query.answer()
-        await query.edit_message_text("Operation cancelled.")
+        await query.edit_message_text("Operation cancelled.1 envia /start")
     else:
-        await update.message.reply_text("Operation cancelled.")
+        await update.message.reply_text("Operation cancelled.2 envia /start")
 
     # Clean up user data
     context.user_data.pop('search_type', None)
     context.user_data.pop('search_results', None)
     context.user_data.pop('chosen_item', None)
-    
-    start(Update, context)
-    #return ConversationHandler.END
+    return ConversationHandler.END
 
 async def cancel_conversation_and_restart(update: Update, context: CallbackContext) -> int:
     """Handles 'cancel' button presses within the conversation, restarting it."""
-    return await _restart_conversation(update, context, "Operation cancelled.")
+    return await _restart_conversation(update, context, "Operation cancelled.3")
 
 async def unknown_command(update: Update, context: CallbackContext) -> None:
     """Handles unknown commands during the conversation."""
@@ -845,7 +847,7 @@ def main() -> None:
 
     # Conversation handler for the search/add process
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[CommandHandler('start', start, filters=filters.Chat(chat_id = ALLOWED_USER_IDS))],
         states={
             SEARCH_TYPE: [CallbackQueryHandler(search_type_chosen)],
             SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_query_received)],
@@ -869,8 +871,8 @@ def main() -> None:
     )
 
     application.add_handler(conv_handler)
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("downloads", downloads_command)) # Add the new command handler
+    application.add_handler(CommandHandler("help", help_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS)))
+    application.add_handler(CommandHandler("downloads", downloads_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS))) # Add the new command handler
     application.add_handler(CallbackQueryHandler(cancel_conversation)) #unknown_state_handler
 
     # Set bot commands for the menu button
