@@ -12,7 +12,7 @@ import time
 
 # Enable logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d - %(funcName)s()] %(message)s', level=logging.WARNING
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d - %(funcName)s()] %(message)s', level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -927,6 +927,15 @@ def main() -> None:
         BotCommand("help", "Mostrar ayuda"),
         BotCommand("cancel", "Cancelar la operación actual"),
     ]
+
+    # Schedule the VPN check function
+    # Check if the gluetunCheck variable is set to 'True'    
+    if gluetunCheck == 'True':
+        commands.append(BotCommand("VPNStatus", "Verificar estado de VPN")) # Add the VPN status command if enabled
+        logger.info("VPN check enabled. Scheduling VPN IP check.")
+        # Schedule the VPN check every 10 minutes
+        schedule.every(10).minutes.do(check_vpn_ip, application.bot)
+
     # Use run_sync for potentially blocking operations if needed, but set_my_commands is usually quick
     # await application.bot.set_my_commands(commands)
     # For simplicity in this context, let's assume direct call is okay or handle potential blocking if necessary
@@ -937,16 +946,6 @@ def main() -> None:
     import asyncio
     asyncio.get_event_loop().run_until_complete(application.bot.set_my_commands(commands))
     logger.info("Bot commands set.")
-
-    # Schedule the VPN check function
-    try:
-        # Check if the gluetunCheck variable is set to 'True'
-        if gluetunCheck == 'True':
-            logger.info("VPN check enabled. Scheduling VPN IP check.")
-            # Schedule the VPN check every 10 minutes
-            schedule.every(10).minutes.do(check_vpn_ip, application.bot)
-    except:
-        pass
 
     # Run the bot until the user presses Ctrl-C
     logger.info("Starting bot...")
