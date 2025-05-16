@@ -320,7 +320,7 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
         torrents = client.torrents_info() # Gets all torrents by default
 
         if not torrents:
-            return "No active downloads found\.", None
+            return "No active downloads found", None
 
         message_lines = ["*Current Downloads:*\n"]
         bar_len = 10  # Longitud visual de la barra
