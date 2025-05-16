@@ -1,4 +1,4 @@
 python-telegram-bot==20.8
 requests==2.31.0
-qbittorrent-api==2.6.0
+qbittorrent-api==v2025.5.0
 schedule==1.2.1
