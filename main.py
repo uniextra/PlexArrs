@@ -6,8 +6,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotComm
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
 import re
 import qbittorrentapi # Use the new library
-import schedule
-import time
 #import config
 
 # Enable logging
@@ -136,12 +134,12 @@ def escape_markdown_v2(text: str) -> str:
     escape_chars = r'_*\[\]()~`>#+\-=|{}.!'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
-def check_vpn_ip(bot_instance):
+async def check_vpn_ip_job(context: CallbackContext) -> None:
     """Checks the public IP and sends a Telegram alert if the country is not Netherlands."""
-    logger.info("Checking public IP...")
-    url = "http://localhost:8111/v1/publicip/ip"  #Gluetun
+    logger.info("Checking public IP (scheduled job)...")
+    url = "http://192.168.1.137:8111/v1/publicip/ip"  #Gluetun
+    
     try:
-
         response = requests.get(url, auth=(gluetunUser, gluetunPass), timeout=10)
         response.raise_for_status() # Raise an exception for bad status codes
 
@@ -152,21 +150,62 @@ def check_vpn_ip(bot_instance):
             logger.info("VPN IP is in Netherlands. All good.")
         else:
             logger.warning(f"VPN IP is NOT in Netherlands. Current country: {ip_info.get('country', 'N/A')}. Sending alert.")
-            # Send Telegram message
-            bot_instance.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Alerta: La VPN parece estar caída o no está en Países Bajos.")
+            # Send Telegram message to the first allowed user
+            if ALLOWED_USER_IDS:
+                await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Alerta: La VPN parece estar caída o no está en Países Bajos.")
+            else:
+                logger.warning("No allowed user IDs configured to send VPN alert.")
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error checking public IP: {e}")
-        # Send Telegram message about the error
-        bot_instance.send_message(chat_id=267580734, text=f"🚨 Error al verificar la VPN: {e}")
+        logger.error(f"Error checking public IP (scheduled job): {e}")
+        # Send Telegram message about the error to the first allowed user
+        if ALLOWED_USER_IDS:
+            await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text=f"🚨 Error al verificar la VPN (programado): {e}")
+        else:
+            logger.warning("No allowed user IDs configured to send VPN error alert.")
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to decode JSON from IP check response: {e}")
-        # Send Telegram message about the JSON error
-        bot_instance.send_message(chat_id=267580734, text=f"🚨 Error al procesar la respuesta de la VPN: {e}")
+        logger.error(f"Failed to decode JSON from IP check response (scheduled job): {e}")
+        # Send Telegram message about the JSON error to the first allowed user
+        if ALLOWED_USER_IDS:
+            await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text=f"🚨 Error al procesar la respuesta de la VPN (programado): {e}")
+        else:
+            logger.warning("No allowed user IDs configured to send VPN JSON error alert.")
     except Exception as e:
-        logger.error(f"An unexpected error occurred during VPN check: {e}")
-        # Send Telegram message about unexpected error
-        bot_instance.send_message(chat_id=267580734, text=f"🚨 Error inesperado al verificar la VPN: {e}")
+        logger.error(f"An unexpected error occurred during VPN check (scheduled job): {e}")
+        # Send Telegram message about unexpected error to the first allowed user
+        if ALLOWED_USER_IDS:
+            await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text=f"🚨 Error inesperado al verificar la VPN (programado): {e}")
+        else:
+            logger.warning("No allowed user IDs configured to send unexpected VPN error alert.")
+
+
+async def vpnstatus_command(update: Update, context: CallbackContext) -> None:
+    """Checks the public IP and sends a Telegram alert if the country is not Netherlands."""
+    # This command handler can reuse the logic from the scheduled job, but send the message to the user who issued the command
+    logger.info("Checking public IP (command)...")
+    url = "http://192.168.1.137:8111/v1/publicip/ip"  #Gluetun
+    
+    try:
+        response = requests.get(url, auth=(gluetunUser, gluetunPass), timeout=10)
+        response.raise_for_status() # Raise an exception for bad status codes
+
+        ip_info = response.json()
+        logger.debug(f"IP Info response: {ip_info}")
+
+        if "country" in ip_info and ip_info["country"] == "Netherlands":
+            await update.message.reply_text("VPN IP is in Netherlands. All good.")
+        else:
+            await update.message.reply_text(f"🚨 Alerta: La VPN parece estar caída o no está en Países Bajos. Current country: {ip_info.get('country', 'N/A')}.")
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error checking public IP (command): {e}")
+        await update.message.reply_text(f"🚨 Error al verificar la VPN: {e}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to decode JSON from IP check response (command): {e}")
+        await update.message.reply_text(f"🚨 Error al procesar la respuesta de la VPN: {e}")
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during VPN check (command): {e}")
+        await update.message.reply_text(f"🚨 Error inesperado al verificar la VPN: {e}")
 
 
 # --- Sonarr Functions ---
@@ -563,14 +602,40 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
     # Handle 'backtosearch' from the results list explicitly
     # if callback_data == 'back_to_results':
     #     return await search_query_received(update, context)
-    ##########################
     if callback_data == 'back_to_results':
-        results = context.user_data.get('search_results')
-        if results:
-            return await _render_search_results(update, context, results)
-        else:
-            return await _restart_conversation(update, context, "No results to go back to.")
-    ##########################
+        try:
+            results = context.user_data.get('search_results')
+            if results:
+                return await _render_search_results(update, context, results)
+            else:
+                return await _restart_conversation(update, context, "No results to go back to.")
+
+        except Exception as e:
+            logger.warning(f"Could not delete message on cancel: {e}. Trying edit instead.")
+            # Note: The original code logged the traceback info here using logging.error,
+            # even though the primary log was logger.warning. Keeping that pattern.
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            logging.error("Error: {} {} {} {}".format(str(e),exc_type, fname, exc_tb.tb_lineno))
+            try:
+                 # Edit using query context as fallback if delete failed
+                 await query.edit_message_text("Okay, I won't add it. Operation cancelled.7")
+            except Exception as e2:
+                 logger.error(f"Could not edit message on cancel either: {e2}")
+                 # Add traceback for the inner exception
+                 exc_type_inner, exc_obj_inner, exc_tb_inner = sys.exc_info()
+                 fname_inner = os.path.split(exc_tb_inner.tb_frame.f_code.co_filename)[1]
+                 logging.error(f"Traceback Info: Type={exc_type_inner}, File={fname_inner}, Line={exc_tb_inner.tb_lineno}")
+                 # Final fallback: send new message if possible
+                 await context.bot.send_message("Okay, I won't add it. Operation cancelled.8")
+
+        # Clean up user data here as well for cancellation
+        context.user_data.pop('search_type', None)
+        context.user_data.pop('search_results', None)
+        context.user_data.pop('chosen_item', None)
+        # Use the restart helper after cancelling the add
+        # The previous logic sent multiple messages, let's simplify with the helper
+        return await _restart_conversation(update, context, "Okay, I won't add it. Operation cancelled.9")
 
     # Keep handling 'cancel' just in case, though fallbacks might catch it too
     if callback_data == 'cancel':
@@ -802,13 +867,13 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             logging.error(f"Traceback Info: Type={exc_type}, File={fname}, Line={exc_tb.tb_lineno}")
             # Fallback: send result as a new message if editing fails
-            await update_message.reply_text(result_text)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=result_text)
     else:
          # If status message failed, send result as new message
          if success:
-            await update_message.reply_text(f"✅ Successfully added '{title}' and started search.")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"✅ Successfully added '{title}' and started search.")
          else:
-            await update_message.reply_text(f"❌ Failed to add '{title}'. Check logs for details.")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Failed to add '{title}'. Check logs for details.")
 
 
     # 5. Send the next prompt ("What would you like to search for next?")
@@ -859,8 +924,7 @@ async def unknown_state_handler(update: Update, context: CallbackContext) -> int
     return await _restart_conversation(update, context, message)
 
 
-
-def main() -> None:
+if __name__ == '__main__':
     """Start the bot."""
     # --- Environment Variable Check ---
     required_vars = [
@@ -871,19 +935,19 @@ def main() -> None:
     missing_vars = [var for var in required_vars if not globals().get(var)]
     if missing_vars:
         logger.critical(f"Missing required environment variables: {', '.join(missing_vars)}. Exiting.")
-        return # Or raise SystemExit
+        sys.exit(1) # Use sys.exit instead of return
 
     # Check if numeric IDs were loaded correctly (they have defaults, but good to be explicit)
     numeric_vars_check = {
-        'SONARR_ROOT_FOLDER_ID': SONARR_ROOT_FOLDER_ID,
-        'SONARR_QUALITY_PROFILE_ID': SONARR_QUALITY_PROFILE_ID,
-        'RADARR_ROOT_FOLDER_ID': RADARR_ROOT_FOLDER_ID,
-        'RADARR_QUALITY_PROFILE_ID': RADARR_QUALITY_PROFILE_ID
+         'SONARR_ROOT_FOLDER_ID': SONARR_ROOT_FOLDER_ID,
+         'SONARR_QUALITY_PROFILE_ID': SONARR_QUALITY_PROFILE_ID,
+         'RADARR_ROOT_FOLDER_ID': RADARR_ROOT_FOLDER_ID,
+         'RADARR_QUALITY_PROFILE_ID': RADARR_QUALITY_PROFILE_ID
     }
     for name, value in numeric_vars_check.items():
          if value is None: # Should not happen with defaults, but check anyway
               logger.critical(f"Environment variable {name} could not be loaded correctly. Exiting.")
-              return # Or raise SystemExit
+              sys.exit(1) # Use sys.exit instead of return
 
     logger.info(f"Allowed user IDs loaded: {ALLOWED_USER_IDS if ALLOWED_USER_IDS else 'None (all allowed)'}")
 
@@ -917,6 +981,7 @@ def main() -> None:
 
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("help", help_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS)))
+    application.add_handler(CommandHandler("vpnstatus", vpnstatus_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS)))
     application.add_handler(CommandHandler("downloads", downloads_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS))) # Add the new command handler
     application.add_handler(CallbackQueryHandler(cancel_conversation)) #unknown_state_handler
 
@@ -931,10 +996,10 @@ def main() -> None:
     # Schedule the VPN check function
     # Check if the gluetunCheck variable is set to 'True'    
     if gluetunCheck == 'True':
-        commands.append(BotCommand("VPNStatus", "Verificar estado de VPN")) # Add the VPN status command if enabled
+        commands.append(BotCommand("vpnstatus", "Verificar estado de VPN")) # Add the VPN status command if enabled
         logger.info("VPN check enabled. Scheduling VPN IP check.")
         # Schedule the VPN check every 10 minutes
-        schedule.every(10).minutes.do(check_vpn_ip, application.bot)
+        # Removed the schedule.every line
 
     # Use run_sync for potentially blocking operations if needed, but set_my_commands is usually quick
     # await application.bot.set_my_commands(commands)
@@ -943,21 +1008,16 @@ def main() -> None:
     # A common pattern is to run it in a separate thread or use asyncio's run_in_executor.
     # However, python-telegram-bot v20+ handles this internally more gracefully.
     # Let's try the direct await first. If it causes issues, we might need adjustment.
-    import asyncio
-    asyncio.get_event_loop().run_until_complete(application.bot.set_my_commands(commands))
-    logger.info("Bot commands set.")
+    # Removed the await application.bot.set_my_commands(commands) line
 
-    # Run the bot until the user presses Ctrl-C
+    # Schedule the VPN check function using jobqueue
+    if gluetunCheck == 'True':
+        commands.append(BotCommand("vpnstatus", "Verificar estado de VPN")) # Add the VPN status command if enabled
+        logger.info("VPN check enabled. Scheduling VPN IP check.")
+        # Schedule the VPN check every 10 minutes
+        application.job_queue.run_repeating(check_vpn_ip_job, interval=600, first=10) # 600 seconds = 10 minutes
+
+    # Run the bot using polling
     logger.info("Starting bot...")
     application.run_polling()
     logger.info("Bot stopped.")
-
-    # Keep the script running for the scheduler
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
-if __name__ == '__main__':
-    # The check for placeholder tokens is removed as config.py is no longer used.
-    # The check for missing environment variables is now inside main().
-    main()
