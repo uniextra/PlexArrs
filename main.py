@@ -6,6 +6,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotComm
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
 import re
 import qbittorrentapi # Use the new library
+import schedule
+import time
 #import config
 
 # Enable logging
@@ -45,8 +47,18 @@ except ValueError as e:
     # For now, we'll let the defaults above stand, but a production app might exit here.
     pass # Or raise SystemExit("Invalid numeric environment variable.")
 
+try:
+    gluetunCheck = os.getenv('GLUETUN_ENABLE_CHECK')
+    gluetunUser = os.getenv('GLUETUN_USER')
+    gluetunPass = os.getenv('GLUETUN_PASS')
+except:
+    gluetunCheck = None
+    gluetunUser = None
+    gluetunPass = None
+
+
 # Load allowed user IDs (comma-separated string)
-allowed_user_ids_str = '267580734,284446062' # os.getenv('ALLOWED_USER_IDS', '') # Default to empty string
+allowed_user_ids_str = os.getenv('ALLOWED_USER_IDS', '') # Default to empty string
 ALLOWED_USER_IDS = []
 if allowed_user_ids_str:
     try:
@@ -123,6 +135,39 @@ async def _restart_conversation(update: Update, context: CallbackContext, messag
 def escape_markdown_v2(text: str) -> str:
     escape_chars = r'_*\[\]()~`>#+\-=|{}.!'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
+
+def check_vpn_ip(bot_instance):
+    """Checks the public IP and sends a Telegram alert if the country is not Netherlands."""
+    logger.info("Checking public IP...")
+    url = "http://localhost:8111/v1/publicip/ip"  #Gluetun
+    try:
+
+        response = requests.get(url, auth=(gluetunUser, gluetunPass), timeout=10)
+        response.raise_for_status() # Raise an exception for bad status codes
+
+        ip_info = response.json()
+        logger.debug(f"IP Info response: {ip_info}")
+
+        if "country" in ip_info and ip_info["country"] == "Netherlands":
+            logger.info("VPN IP is in Netherlands. All good.")
+        else:
+            logger.warning(f"VPN IP is NOT in Netherlands. Current country: {ip_info.get('country', 'N/A')}. Sending alert.")
+            # Send Telegram message
+            bot_instance.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Alerta: La VPN parece estar caída o no está en Países Bajos.")
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error checking public IP: {e}")
+        # Send Telegram message about the error
+        bot_instance.send_message(chat_id=267580734, text=f"🚨 Error al verificar la VPN: {e}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to decode JSON from IP check response: {e}")
+        # Send Telegram message about the JSON error
+        bot_instance.send_message(chat_id=267580734, text=f"🚨 Error al procesar la respuesta de la VPN: {e}")
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during VPN check: {e}")
+        # Send Telegram message about unexpected error
+        bot_instance.send_message(chat_id=267580734, text=f"🚨 Error inesperado al verificar la VPN: {e}")
+
 
 # --- Sonarr Functions ---
 
@@ -893,11 +938,25 @@ def main() -> None:
     asyncio.get_event_loop().run_until_complete(application.bot.set_my_commands(commands))
     logger.info("Bot commands set.")
 
+    # Schedule the VPN check function
+    try:
+        # Check if the gluetunCheck variable is set to 'True'
+        if gluetunCheck == 'True':
+            logger.info("VPN check enabled. Scheduling VPN IP check.")
+            # Schedule the VPN check every 10 minutes
+            schedule.every(10).minutes.do(check_vpn_ip, application.bot)
+    except:
+        pass
 
     # Run the bot until the user presses Ctrl-C
     logger.info("Starting bot...")
     application.run_polling()
     logger.info("Bot stopped.")
+
+    # Keep the script running for the scheduler
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
 
 if __name__ == '__main__':
     # The check for placeholder tokens is removed as config.py is no longer used.
