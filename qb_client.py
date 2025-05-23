@@ -2,8 +2,9 @@ import logging
 import qbittorrentapi
 import requests # For potential requests.exceptions.RequestException
 import sys, os # For traceback logging
+import html # Added for HTML escaping
 from config import QBITTORRENT_URL, QBITTORRENT_USERNAME, QBITTORRENT_PASSWORD
-from utils import escape_markdown_v2
+# from utils import escape_markdown_v2 # This line will be removed
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +35,12 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
         if not torrents:
             return "No active downloads found", None
 
-        message_lines = ["*Current Downloads:*\n"]
+        message_lines = ["<b>Current Downloads:</b>\n"] # Changed from Markdown to HTML bold
         bar_len = 10  # Longitud visual de la barra
 
         for torrent in torrents:
             name = torrent.name[:26]  # Truncate to 26 characters
+            name = html.escape(name) # Escape HTML special characters in the name
             progress = torrent.progress  # 0.0 to 1.0
             percent = int(progress * 100)
             size_gb = round(torrent.size / (1024 ** 3), 2)
@@ -48,7 +50,7 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
             bar = '█' * filled_len + '░' * empty_len
 
             line = f"{name} [{bar}] {percent}% - {size_gb} GB"
-            line = escape_markdown_v2(line)
+            # line = escape_markdown_v2(line) # This line will be an issue now
             message_lines.append(line)
 
         return "\n".join(message_lines), None
