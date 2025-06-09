@@ -60,89 +60,89 @@ async def _restart_conversation(update: Update, context: CallbackContext) -> int
 
     return SEARCH_TYPE
 
-async def check_vpn_ip_job(context: CallbackContext) -> None:
-    """Checks the public IP and sends a Telegram alert if the country is not Netherlands."""
-    logger.info("Checking public IP (scheduled job)...")
-    # Assuming gluetunUser and gluetunPass are loaded from config
-    if not gluetunUser or not gluetunPass:
-        logger.warning("Gluetun credentials not set. VPN check skipped.")
-        return
+# async def check_vpn_ip_job(context: CallbackContext) -> None:
+#     """Checks the public IP and sends a Telegram alert if the country is not Netherlands."""
+#     logger.info("Checking public IP (scheduled job)...")
+#     # Assuming gluetunUser and gluetunPass are loaded from config
+#     if not gluetunUser or not gluetunPass:
+#         logger.warning("Gluetun credentials not set. VPN check skipped.")
+#         return
 
-    url = "http://192.168.1.137:8111/v1/publicip/ip"  #Gluetun
+#     url = "http://192.168.1.137:8111/v1/publicip/ip"  #Gluetun
     
-    try:
-        response = requests.get(url, auth=(gluetunUser, gluetunPass), timeout=10)
-        response.raise_for_status() # Raise an exception for bad status codes
+#     try:
+#         response = requests.get(url, auth=(gluetunUser, gluetunPass), timeout=10)
+#         response.raise_for_status() # Raise an exception for bad status codes
 
-        ip_info = response.json()
-        logger.debug(f"IP Info response: {ip_info}")
+#         ip_info = response.json()
+#         logger.debug(f"IP Info response: {ip_info}")
 
-        if "country" in ip_info and ip_info["country"] == "Netherlands":
-            logger.info("VPN IP is in Netherlands. All good.")
-        else:
-            logger.warning(f"VPN IP is NOT in Netherlands. Current country: {ip_info.get('country', 'N/A')}. Sending alert.")
-            if ALLOWED_USER_IDS:
-                await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Alerta: La VPN parece estar caída o no está en Países Bajos.")
-            else:
-                logger.warning("No allowed user IDs configured to send VPN alert.")
+#         if "country" in ip_info and ip_info["country"] == "Netherlands":
+#             logger.info("VPN IP is in Netherlands. All good.")
+#         else:
+#             logger.warning(f"VPN IP is NOT in Netherlands. Current country: {ip_info.get('country', 'N/A')}. Sending alert.")
+#             if ALLOWED_USER_IDS:
+#                 await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Alerta: La VPN parece estar caída o no está en Países Bajos.")
+#             else:
+#                 logger.warning("No allowed user IDs configured to send VPN alert.")
 
-    except requests.exceptions.RequestException:
-        logger.exception("Error checking public IP (scheduled job)")
-        if ALLOWED_USER_IDS:
-            await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Error al verificar la VPN (programado): Falló la conexión.")
-        else:
-            logger.warning("No allowed user IDs configured to send VPN error alert.")
-    except json.JSONDecodeError:
-        logger.exception("Failed to decode JSON from IP check response (scheduled job)")
-        if ALLOWED_USER_IDS:
-            await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Error al procesar la respuesta de la VPN (programado): Respuesta inválida.")
-        else:
-            logger.warning("No allowed user IDs configured to send VPN JSON error alert.")
-    except Exception:
-        logger.exception("An unexpected error occurred during VPN check (scheduled job)")
-        if ALLOWED_USER_IDS:
-            await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Error inesperado al verificar la VPN (programado).")
-        else:
-            logger.warning("No allowed user IDs configured to send unexpected VPN error alert.")
+#     except requests.exceptions.RequestException:
+#         logger.exception("Error checking public IP (scheduled job)")
+#         if ALLOWED_USER_IDS:
+#             await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Error al verificar la VPN (programado): Falló la conexión.")
+#         else:
+#             logger.warning("No allowed user IDs configured to send VPN error alert.")
+#     except json.JSONDecodeError:
+#         logger.exception("Failed to decode JSON from IP check response (scheduled job)")
+#         if ALLOWED_USER_IDS:
+#             await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Error al procesar la respuesta de la VPN (programado): Respuesta inválida.")
+#         else:
+#             logger.warning("No allowed user IDs configured to send VPN JSON error alert.")
+#     except Exception:
+#         logger.exception("An unexpected error occurred during VPN check (scheduled job)")
+#         if ALLOWED_USER_IDS:
+#             await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Error inesperado al verificar la VPN (programado).")
+#         else:
+#             logger.warning("No allowed user IDs configured to send unexpected VPN error alert.")
 
-async def vpnstatus_command(update: Update, context: CallbackContext) -> None:
-    """Checks the public IP and sends a Telegram alert if the country is not Netherlands."""
-    logger.info("Checking public IP (command)...")
-    if not gluetunUser or not gluetunPass:
-        await update.message.reply_text("Credenciales de Gluetun no configuradas.")
-        return
+# async def vpnstatus_command(update: Update, context: CallbackContext) -> None:
+#     """Checks the public IP and sends a Telegram alert if the country is not Netherlands."""
+#     logger.info("Checking public IP (command)...")
+#     if not gluetunUser or not gluetunPass:
+#         await update.message.reply_text("Credenciales de Gluetun no configuradas.")
+#         return
 
-    url = "http://192.168.1.137:8111/v1/publicip/ip"  #Gluetun
+#     url = "http://192.168.1.137:8111/v1/publicip/ip"  #Gluetun
     
-    try:
-        response = requests.get(url, auth=(gluetunUser, gluetunPass), timeout=10)
-        response.raise_for_status() 
+#     try:
+#         response = requests.get(url, auth=(gluetunUser, gluetunPass), timeout=10)
+#         response.raise_for_status() 
 
-        ip_info = response.json()
-        logger.debug(f"IP Info response: {ip_info}")
+#         ip_info = response.json()
+#         logger.debug(f"IP Info response: {ip_info}")
 
-        if "country" in ip_info and ip_info["country"] == "Netherlands":
-            await update.message.reply_text("VPN IP is in Netherlands. All good.")
+#         if "country" in ip_info and ip_info["country"] == "Netherlands":
+#             await update.message.reply_text("VPN IP is in Netherlands. All good.")
 
-            # Removed check and reset logic as requested.
+#             # Removed check and reset logic as requested.
 
-        else:
-            await update.message.reply_text(f"🚨 Alerta: La VPN parece estar caída o no está en Países Bajos. Current country: {ip_info.get('country', 'N/A')}.")
+#         else:
+#             await update.message.reply_text(f"🚨 Alerta: La VPN parece estar caída o no está en Países Bajos. Current country: {ip_info.get('country', 'N/A')}.")
 
 
         
 
 
 
-    except requests.exceptions.RequestException:
-        logger.exception("Error checking public IP (command)")
-        await update.message.reply_text("🚨 Error al verificar la VPN: Falló la conexión.")
-    except json.JSONDecodeError:
-        logger.exception("Failed to decode JSON from IP check response (command)")
-        await update.message.reply_text("🚨 Error al procesar la respuesta de la VPN: Respuesta inválida.")
-    except Exception:
-        logger.exception("An unexpected error occurred during VPN check (command)")
-        await update.message.reply_text("🚨 Error inesperado al verificar la VPN.")
+    # except requests.exceptions.RequestException:
+    #     logger.exception("Error checking public IP (command)")
+    #     await update.message.reply_text("🚨 Error al verificar la VPN: Falló la conexión.")
+    # except json.JSONDecodeError:
+    #     logger.exception("Failed to decode JSON from IP check response (command)")
+    #     await update.message.reply_text("🚨 Error al procesar la respuesta de la VPN: Respuesta inválida.")
+    # except Exception:
+    #     logger.exception("An unexpected error occurred during VPN check (command)")
+    #     await update.message.reply_text("🚨 Error inesperado al verificar la VPN.")
 
 
 async def downloads_command(update: Update, context: CallbackContext) -> None:
@@ -298,7 +298,26 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
 
         title_str = html.escape(str(title) if title is not None else 'N/A')
         overview_str = html.escape(str(overview) if overview is not None else 'No description available.')
+        
+        # Attempt to get rating information
+        rating = None
+        ratings = chosen_item.get('ratings', [])
+        if ratings:
+            # Prioritize IMDb or TMDb ratings if available
+            for r in ratings:
+                if r.get('system') in ['imdb', 'tmdb'] and r.get('value') is not None:
+                    rating = f"{r['system'].upper()}: {r['value']}"
+                    break
+            # If no preferred rating found, take the first one with a value
+            if rating is None:
+                 for r in ratings:
+                    if r.get('value') is not None:
+                        rating = f"{r.get('system', 'N/A').upper()}: {r['value']}"
+                        break
+
         message_text = f"<b>{title_str} ({year})</b>\n\n{overview_str}"
+        if rating:
+            message_text += f"\n\nRating: {rating}"
         
         keyboard = [
             [InlineKeyboardButton("✅ Add this", callback_data='confirm_add')],

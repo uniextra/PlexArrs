@@ -14,11 +14,10 @@ import qbittorrentapi # Use the new library
 from telegram_handlers import (
     start, help_command, downloads_command, vpnstatus_command, check_vpn_ip_job,
     search_type_chosen, search_query_received, item_chosen, add_item_confirmed,
-    cancel_conversation, cancel_conversation_and_restart,
+    cancel_conversation, cancel_conversation_and_restart, _restart_conversation,
     unknown_command, unknown_state_handler,
     # _render_search_results, _restart_conversation # These are internal to telegram_handlers.py
 )
-
 
 # Enable logging
 logging.basicConfig(
@@ -108,7 +107,7 @@ if __name__ == '__main__':
             # Add more robust fallbacks
             MessageHandler(filters.COMMAND, cancel_conversation), # Handle unknown commands within the conversation
             MessageHandler(filters.ALL, cancel_conversation), # Handle unexpected text/messages
-            CallbackQueryHandler(cancel_conversation) # Handle unexpected callbacks
+            CallbackQueryHandler(_restart_conversation) # Handle unexpected callbacks
             # MessageHandler(filters.COMMAND, unknown_command), # Handle unknown commands within the conversation
             # MessageHandler(filters.ALL, unknown_state_handler), # Handle unexpected text/messages
             # CallbackQueryHandler(unknown_state_handler) # Handle unexpected callbacks
@@ -119,9 +118,9 @@ if __name__ == '__main__':
 
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("help", help_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS)))
-    application.add_handler(CommandHandler("vpnstatus", vpnstatus_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS)))
+    # application.add_handler(CommandHandler("vpnstatus", vpnstatus_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS)))
     application.add_handler(CommandHandler("downloads", downloads_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS))) # Add the new command handler
-    application.add_handler(CallbackQueryHandler(cancel_conversation)) #unknown_state_handler
+    application.add_handler(CommandHandler("cancel", cancel_conversation, filters=filters.Chat(chat_id = ALLOWED_USER_IDS))) # Add the new command handler
 
     # Set bot commands for the menu button
     commands = [
@@ -133,11 +132,11 @@ if __name__ == '__main__':
 
     # Schedule the VPN check function
     # Check if the gluetunCheck variable is set to 'True'
-    if gluetunCheck == 'True':
-        commands.append(BotCommand("vpnstatus", "Verificar estado de VPN")) # Add the VPN status command if enabled
-        logger.info("VPN check enabled. Scheduling VPN IP check.")
-        # Schedule the VPN check every 10 minutes
-        # application.job_queue.run_repeating(check_vpn_ip_job, interval=600, first=10) # 600 seconds = 10 minutes
+    # if gluetunCheck == 'True':
+    #     commands.append(BotCommand("vpnstatus", "Verificar estado de VPN")) # Add the VPN status command if enabled
+    #     logger.info("VPN check enabled. Scheduling VPN IP check.")
+    #     # Schedule the VPN check every 10 minutes
+    #     # application.job_queue.run_repeating(check_vpn_ip_job, interval=600, first=10) # 600 seconds = 10 minutes
 
     # Use run_sync for potentially blocking operations if needed, but set_my_commands is usually quick
     # await application.bot.set_my_commands(commands)
@@ -156,14 +155,14 @@ if __name__ == '__main__':
         BotCommand("cancel", "Cancelar la operación actual"),
     ]
 
-    # Add VPN status command if enabled
-    if gluetunCheck == 'True': # gluetunCheck is imported from config
-        base_commands.append(BotCommand("vpnstatus", "Verificar estado de VPN"))
-        # The job_queue setup for check_vpn_ip_job should already be there and is fine.
-        # commands.append(BotCommand("vpnstatus", "Verificar estado de VPN")) # This is now handled below
-        logger.info("VPN check enabled. Scheduling VPN IP check.")
-        # Schedule the VPN check every 10 minutes
-        application.job_queue.run_repeating(check_vpn_ip_job, interval=600, first=10) # 600 seconds = 10 minutes
+    # # Add VPN status command if enabled
+    # if gluetunCheck == 'True': # gluetunCheck is imported from config
+    #     base_commands.append(BotCommand("vpnstatus", "Verificar estado de VPN"))
+    #     # The job_queue setup for check_vpn_ip_job should already be there and is fine.
+    #     # commands.append(BotCommand("vpnstatus", "Verificar estado de VPN")) # This is now handled below
+    #     logger.info("VPN check enabled. Scheduling VPN IP check.")
+    #     # Schedule the VPN check every 10 minutes
+    #     application.job_queue.run_repeating(check_vpn_ip_job, interval=600, first=10) # 600 seconds = 10 minutes
 
     # Asynchronously set the bot commands
     # We need an async function to use await, and schedule it to run once.
