@@ -12,11 +12,10 @@ import qbittorrentapi # Use the new library
 # from radarr_client import search_radarr, add_movie_to_radarr # No longer needed directly in main
 # from qb_client import get_qbittorrent_downloads # No longer needed directly in main
 from telegram_handlers import (
-    start, help_command, downloads_command, vpnstatus_command, check_vpn_ip_job,
+    start, help_command, downloads_command,
     search_type_chosen, search_query_received, item_chosen, add_item_confirmed,
-    cancel_conversation, cancel_conversation_and_restart, _restart_conversation,
-    unknown_command, unknown_state_handler,
-    # _render_search_results, _restart_conversation # These are internal to telegram_handlers.py
+    cancel_conversation, cancel_conversation_and_restart, _restart_conversation
+    # _render_search_results, _restart_conversation # These are internal to telegram_handlers.py unknown_command, unknown_state_handler,
 )
 
 # Enable logging
