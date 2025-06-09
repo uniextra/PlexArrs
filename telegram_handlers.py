@@ -286,6 +286,20 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
         chosen_item = results[choice_index]
         context.user_data['chosen_item'] = chosen_item
 
+        # # Send the full JSON for debugging
+        # try:
+        #     await context.bot.send_message(
+        #         chat_id=update.effective_chat.id,
+        #         text=f"DEBUG: Chosen Item JSON:\n<pre>{html.escape(json.dumps(chosen_item, indent=2))}</pre>",
+        #         parse_mode='HTML'
+        #     )
+        # except Exception as e:
+        #     logger.exception(f"Failed to send debug JSON message: {e}")
+        #     await context.bot.send_message(
+        #         chat_id=update.effective_chat.id,
+        #         text="DEBUG: Could not send chosen item JSON."
+        #     )
+
         title = chosen_item.get('title', 'N/A')
         year = chosen_item.get('year', '')
         overview = chosen_item.get('overview', 'No description available.')
@@ -296,28 +310,20 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
             if poster_info:
                 poster_url = poster_info.get('remoteUrl') or poster_info.get('url')
 
+
+        
         title_str = html.escape(str(title) if title is not None else 'N/A')
         overview_str = html.escape(str(overview) if overview is not None else 'No description available.')
         
         # Attempt to get rating information
-        rating = None
-        ratings = chosen_item.get('ratings', [])
-        if ratings:
-            # Prioritize IMDb or TMDb ratings if available
-            for r in ratings:
-                if r.get('system') in ['imdb', 'tmdb'] and r.get('value') is not None:
-                    rating = f"{r['system'].upper()}: {r['value']}"
-                    break
-            # If no preferred rating found, take the first one with a value
-            if rating is None:
-                 for r in ratings:
-                    if r.get('value') is not None:
-                        rating = f"{r.get('system', 'N/A').upper()}: {r['value']}"
-                        break
+        rating_value = None
+        ratings_data = chosen_item.get('ratings')
+        if isinstance(ratings_data, dict) and ratings_data.get('value') is not None:
+            rating_value = ratings_data['value']
 
         message_text = f"<b>{title_str} ({year})</b>\n\n{overview_str}"
-        if rating:
-            message_text += f"\n\nRating: {rating}"
+        if rating_value is not None:
+            message_text += f"\n\n❤️ {rating_value}"
         
         keyboard = [
             [InlineKeyboardButton("✅ Add this", callback_data='confirm_add')],
