@@ -65,7 +65,21 @@ def add_series_to_sonarr(series_info: dict) -> bool:
         return True
     except requests.exceptions.RequestException as e:
         log_message = f"Failed to add series '{series_info['title']}' to Sonarr."
+        log_message = f"Failed to add series '{series_info['title']}' to Sonarr."
+        error_code = 'unknown_error'
         if response is not None:
             log_message += f" Sonarr response: {response.text}"
+            try:
+                error_response = response.json()
+                if isinstance(error_response, list) and error_response:
+                    # Assuming the first error object contains the errorCode
+                    first_error = error_response[0]
+                    if 'errorCode' in first_error:
+                        error_code = first_error['errorCode']
+            except json.JSONDecodeError:
+                logger.warning("Failed to decode Sonarr error response JSON.")
+            except Exception as json_e:
+                logger.warning(f"Unexpected error parsing Sonarr error response: {json_e}")
+
         logger.exception(log_message)
-        return False
+        return error_code # Return the error code or 'unknown_error'
