@@ -58,7 +58,7 @@ async def _restart_conversation(update: Update, context: CallbackContext) -> int
         # If no query, it's likely a message handler context (e.g. /cancel command)
         await context.bot.send_message(chat_id=update.effective_chat.id, text=message_text, reply_markup=reply_markup, parse_mode='HTML')
 
-    return SEARCH_TYPE
+    return ConversationHandler.END
 
 # async def check_vpn_ip_job(context: CallbackContext) -> None:
 #     """Checks the public IP and sends a Telegram alert if the country is not Netherlands."""
@@ -153,24 +153,29 @@ async def downloads_command(update: Update, context: CallbackContext) -> None:
 
     message, error = get_qbittorrent_downloads()
 
+    keyboard = [[InlineKeyboardButton("⬅️ Back", callback_data='back_to_start')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     if error:
-        await update.message.reply_text(f"Error: {error}")
+        await update.message.reply_text(f"Error: {error}", reply_markup=reply_markup)
     elif message:
         max_len = 4096
         if len(message) == 0: # Should be handled by get_qbittorrent_downloads returning specific message
-            await update.message.reply_text('No active Downloads', parse_mode='HTML')
+            await update.message.reply_text('No active Downloads', parse_mode='HTML', reply_markup=reply_markup)
         elif len(message) > max_len:
              for i in range(0, len(message), max_len):
-                  await update.message.reply_text(message[i:i+max_len], parse_mode='HTML')
+                  # Only add reply_markup to the last message part if splitting
+                  current_reply_markup = reply_markup if i + max_len >= len(message) else None
+                  await update.message.reply_text(message[i:i+max_len], parse_mode='HTML', reply_markup=current_reply_markup)
         else:
             try:
-                await update.message.reply_text(message, parse_mode='HTML')
+                await update.message.reply_text(message, parse_mode='HTML', reply_markup=reply_markup)
             except Exception: # Catch more specific telegram.error.BadRequest if possible
                 logger.exception(f"Failed to send message (possibly due to Markdown formatting): {message}")
-                await update.message.reply_text("Failed to send download status due to formatting. Check logs. Will try plain text.")
-                await update.message.reply_text(message) # Fallback to plain text
+                await update.message.reply_text("Failed to send download status due to formatting. Check logs. Will try plain text.", reply_markup=reply_markup)
+                await update.message.reply_text(message, reply_markup=reply_markup) # Fallback to plain text
     else:
-        await update.message.reply_text("Could not retrieve download status or no downloads.")
+        await update.message.reply_text("Could not retrieve download status or no downloads.", reply_markup=reply_markup)
 
 
 async def start(update: Update, context: CallbackContext) -> int:
@@ -421,13 +426,18 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
 
     success = False
     if search_type == 'movie':
-        success = add_movie_to_radarr(chosen_item)
+        add_result = add_movie_to_radarr(chosen_item)
     elif search_type == 'series':
-        success = add_series_to_sonarr(chosen_item)
+        add_result = add_series_to_sonarr(chosen_item)
 
     result_text = ""
-    if success:
+    if add_result is True:
         result_text = f"✅ Successfully added '{title_str}' and started search."
+    elif isinstance(add_result, str):
+        if add_result == 'SeriesExistsValidator' or add_result == 'MovieExistsValidator':
+            result_text = f"⚠️ '{title_str}' already exists in {'Sonarr' if search_type == 'series' else 'Radarr'}."
+        else:
+            result_text = f"❌ Failed to add '{title_str}'. Error code: {add_result}. Check logs for details."
     else:
         result_text = f"❌ Failed to add '{title_str}'. Check logs for details."
     
@@ -456,7 +466,7 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Hi {user.mention_html()}! What would you like to search for next?",reply_markup=reply_markup, parse_mode='HTML')
 
-    return SEARCH_TYPE 
+    return ConversationHandler.END 
 
 async def cancel_conversation(update: Update, context: CallbackContext) -> int:
     """Cancels the current conversation via a /cancel command or button not in a state."""

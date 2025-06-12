@@ -92,7 +92,7 @@ if __name__ == '__main__':
 
     # Conversation handler for the search/add process
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start, filters=filters.Chat(chat_id = ALLOWED_USER_IDS))],
+        entry_points=[CallbackQueryHandler(search_type_chosen, pattern='^movie$|^series$')],
         states={
             SEARCH_TYPE: [CallbackQueryHandler(search_type_chosen)],
             SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_query_received)],
@@ -107,19 +107,18 @@ if __name__ == '__main__':
             MessageHandler(filters.COMMAND, cancel_conversation), # Handle unknown commands within the conversation
             MessageHandler(filters.ALL, cancel_conversation), # Handle unexpected text/messages
             CallbackQueryHandler(_restart_conversation) # Handle unexpected callbacks
-            # MessageHandler(filters.COMMAND, unknown_command), # Handle unknown commands within the conversation
-            # MessageHandler(filters.ALL, unknown_state_handler), # Handle unexpected text/messages
-            # CallbackQueryHandler(unknown_state_handler) # Handle unexpected callbacks
             ],
         # Let's keep per_user=True for now, it's generally safer for conversation state management.
         per_user=True # Store conversation state per user
     )
 
     application.add_handler(conv_handler)
+    application.add_handler(CommandHandler("start", start, filters=filters.Chat(chat_id = ALLOWED_USER_IDS)))
     application.add_handler(CommandHandler("help", help_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS)))
     # application.add_handler(CommandHandler("vpnstatus", vpnstatus_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS)))
     application.add_handler(CommandHandler("downloads", downloads_command, filters=filters.Chat(chat_id = ALLOWED_USER_IDS))) # Add the new command handler
     application.add_handler(CommandHandler("cancel", cancel_conversation, filters=filters.Chat(chat_id = ALLOWED_USER_IDS))) # Add the new command handler
+    application.add_handler(CallbackQueryHandler(_restart_conversation, pattern='^back_to_start$')) # Handle back button from downloads
 
     # Set bot commands for the menu button
     commands = [
