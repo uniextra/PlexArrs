@@ -33,6 +33,13 @@ This bot is configured entirely through environment variables when deployed via 
 *   `QBITTORRENT_USERNAME`: Your qBittorrent Web UI username (only required if authentication is enabled).
 *   `QBITTORRENT_PASSWORD`: Your qBittorrent Web UI password (only required if authentication is enabled).
 
+## Features
+
+*   Search for Movies (via Radarr)
+*   Search for TV Series (via Sonarr)
+*   Add selected Movies/Series to Radarr/Sonarr
+*   View current download status from qBittorrent (`/downloads` command)
+
 **Finding Sonarr/Radarr IDs:**
 
 1.  **Root Folder ID:**
@@ -43,13 +50,6 @@ This bot is configured entirely through environment variables when deployed via 
     *   In Sonarr/Radarr, navigate to `Settings` -> `Profiles`.
     *   Click on the desired quality profile.
     *   The ID is the number at the end of the URL in your browser's address bar (e.g., `.../profile/edit/1` means the ID is `1`).
-
-## Features
-
-*   Search for Movies (via Radarr)
-*   Search for TV Series (via Sonarr)
-*   Add selected Movies/Series to Radarr/Sonarr
-*   View current download status from qBittorrent (`/downloads` command)
 
 ## Deployment using Portainer Stacks
 

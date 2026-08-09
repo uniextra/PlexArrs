@@ -1,6 +1,7 @@
 import logging
 import requests # For requests.post in add_movie_to_radarr
-import sys, os # For traceback logging if still used
+import os # For traceback logging if still used
+import json # Import json for JSONDecodeError
 from utils import make_api_request
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ def search_radarr(query: str) -> list:
         return []
     return make_api_request(RADARR_URL, RADARR_API_KEY, 'movie/lookup', {'term': query}) or []
 
-def add_movie_to_radarr(movie_info: dict) -> bool:
+def add_movie_to_radarr(movie_info: dict) -> bool | str:
     """Adds a movie to Radarr."""
     if not RADARR_URL or not RADARR_API_KEY:
         # Cannot get traceback here easily as no exception is caught
@@ -61,7 +62,6 @@ def add_movie_to_radarr(movie_info: dict) -> bool:
         logger.info(f"Movie '{movie_info['title']}' added successfully to Radarr.")
         return True
     except requests.exceptions.RequestException as e:
-        log_message = f"Failed to add movie '{movie_info['title']}' to Radarr."
         log_message = f"Failed to add movie '{movie_info['title']}' to Radarr."
         error_code = 'unknown_error'
         if response is not None:

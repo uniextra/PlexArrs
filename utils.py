@@ -1,10 +1,11 @@
 import logging
 import requests
 import json
-import re
 import os # Import os to access environment variables
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_TIMEOUT = 15
 
 # Load ALLOWED_USER_IDS from environment variables
 allowed_users_str = os.environ.get('ALLOWED_USER_IDS')
@@ -27,7 +28,7 @@ def make_api_request(base_url: str, api_key: str, endpoint: str, params: dict = 
         full_url += f"?{query_string}"
     logger.info(f"Attempting API request to: {full_url}")
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=15)
+        response = requests.get(url, headers=headers, params=params, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
         logger.debug(f"API request successful for {url}. Status: {response.status_code}")
         return response.json()
