@@ -27,7 +27,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: . # Set context to the repository root
+          context: . 
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: uniextra/plexarrs:latest
           labels: ${{ steps.meta.outputs.labels }}
