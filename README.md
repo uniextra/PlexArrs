@@ -1,5 +1,6 @@
 # Telegram Sonarr/Radarr/qBittorrent Bot
 
+[![Docker Pulls](https://img.shields.io/docker/pulls/uniextra/plexarrs.svg)](https://hub.docker.com/r/uniextra/plexarrs)
 This bot allows you to interact with your Sonarr and Radarr instances via Telegram to search for and add movies or series. It also includes functionality to view the status of your qBittorrent downloads.
 
 ## Prerequisites
@@ -70,7 +71,7 @@ This is the recommended method for deploying with Portainer as it uses the `dock
     *   **Important:** Replace the placeholder values (like `YOUR_TELEGRAM_BOT_TOKEN_HERE`) in the compose file *or* define them here in the "Environment variables" section. Defining them here is often cleaner. If you define them here, Portainer makes them available to the container, overriding any defaults in the `environment:` section of the compose file itself.
 7.  **Deploy:** Click the "Deploy the stack" button.
 
-Portainer will now pull the necessary base image (if not already present), build your bot's image using the `Dockerfile`, and start the container defined in the `docker-compose.yml` file, injecting the environment variables you provided.
+Portainer will now pull the pre-built `uniextra/plexarrs:latest` image from Docker Hub and start the container defined in the `docker-compose.yml` file, injecting the environment variables you provided.
 
 You can check the logs for the `telegram_sonarr_radarr_bot` container within Portainer to ensure it started correctly and see any potential errors.
 

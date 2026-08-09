@@ -2,7 +2,8 @@ version: '3.8'
 
 services:
   telegram-bot:
-    build: .
+    image: uniextra/plexarrs:latest
+    # build: . # Uncomment this line and comment out 'image' to build locally
     container_name: telegram_sonarr_radarr_bot
     restart: unless-stopped
     environment:
