@@ -1,11 +1,13 @@
 import logging
 import qbittorrentapi
 import requests # For potential requests.exceptions.RequestException
-import sys, os # For traceback logging
+import os # For traceback logging
 import html # Added for HTML escaping
-# from utils import escape_markdown_v2 # This line will be removed
 
 logger = logging.getLogger(__name__)
+
+CONNECT_TIMEOUT = 10
+READ_TIMEOUT = 20
 
 # Load environment variables directly
 QBITTORRENT_URL = os.environ.get('QBITTORRENT_URL')
@@ -25,7 +27,7 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
         host=QBITTORRENT_URL,
         username=QBITTORRENT_USERNAME,
         password=QBITTORRENT_PASSWORD,
-        REQUESTS_ARGS={'timeout': (10, 20)} # connect timeout, read timeout
+        REQUESTS_ARGS={'timeout': (CONNECT_TIMEOUT, READ_TIMEOUT)} # connect timeout, read timeout
     )
 
     try:

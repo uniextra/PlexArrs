@@ -1,6 +1,7 @@
 import logging
 import requests # For requests.post in add_series_to_sonarr
-import sys, os # For traceback logging if still used
+import os # For traceback logging if still used
+import json # Import json for JSONDecodeError
 from utils import make_api_request
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ def search_sonarr(query: str) -> list:
         return []
     return make_api_request(SONARR_URL, SONARR_API_KEY, 'series/lookup', {'term': query}) or []
 
-def add_series_to_sonarr(series_info: dict) -> bool:
+def add_series_to_sonarr(series_info: dict) -> bool | str:
     """Adds a series to Sonarr."""
     if not SONARR_URL or not SONARR_API_KEY:
         # Cannot get traceback here easily as no exception is caught
@@ -64,7 +65,6 @@ def add_series_to_sonarr(series_info: dict) -> bool:
         logger.info(f"Series '{series_info['title']}' added successfully to Sonarr.")
         return True
     except requests.exceptions.RequestException as e:
-        log_message = f"Failed to add series '{series_info['title']}' to Sonarr."
         log_message = f"Failed to add series '{series_info['title']}' to Sonarr."
         error_code = 'unknown_error'
         if response is not None:

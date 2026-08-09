@@ -10,15 +10,11 @@ from qb_client import get_qbittorrent_downloads
 # Other standard libraries if needed by handlers
 import requests # For vpn check
 import json # For vpn check
-import sys, os # For any remaining manual traceback (should be minimal)
+import os # For any remaining manual traceback (should be minimal)
 import html # Added for HTML escaping
+import asyncio # For sleep
 
 logger = logging.getLogger(__name__)
-
-# Load environment variables directly
-gluetunCheck = os.environ.get('gluetunCheck', 'False') # Default to 'False' if not set
-gluetunUser = os.environ.get('GLUETUN_USER')
-gluetunPass = os.environ.get('GLUETUN_PASS')
 
 # Allowed User IDs - handle as a list of integers
 allowed_users_str = os.environ.get('ALLOWED_USER_IDS')
@@ -41,6 +37,7 @@ async def _restart_conversation(update: Update, context: CallbackContext) -> int
     keyboard = [
         [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
         [InlineKeyboardButton("📺 Series", callback_data='series')],
+        [InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -59,90 +56,6 @@ async def _restart_conversation(update: Update, context: CallbackContext) -> int
         await context.bot.send_message(chat_id=update.effective_chat.id, text=message_text, reply_markup=reply_markup, parse_mode='HTML')
 
     return ConversationHandler.END
-
-# async def check_vpn_ip_job(context: CallbackContext) -> None:
-#     """Checks the public IP and sends a Telegram alert if the country is not Netherlands."""
-#     logger.info("Checking public IP (scheduled job)...")
-#     # Assuming gluetunUser and gluetunPass are loaded from config
-#     if not gluetunUser or not gluetunPass:
-#         logger.warning("Gluetun credentials not set. VPN check skipped.")
-#         return
-
-#     url = "http://192.168.1.137:8111/v1/publicip/ip"  #Gluetun
-    
-#     try:
-#         response = requests.get(url, auth=(gluetunUser, gluetunPass), timeout=10)
-#         response.raise_for_status() # Raise an exception for bad status codes
-
-#         ip_info = response.json()
-#         logger.debug(f"IP Info response: {ip_info}")
-
-#         if "country" in ip_info and ip_info["country"] == "Netherlands":
-#             logger.info("VPN IP is in Netherlands. All good.")
-#         else:
-#             logger.warning(f"VPN IP is NOT in Netherlands. Current country: {ip_info.get('country', 'N/A')}. Sending alert.")
-#             if ALLOWED_USER_IDS:
-#                 await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Alerta: La VPN parece estar caída o no está en Países Bajos.")
-#             else:
-#                 logger.warning("No allowed user IDs configured to send VPN alert.")
-
-#     except requests.exceptions.RequestException:
-#         logger.exception("Error checking public IP (scheduled job)")
-#         if ALLOWED_USER_IDS:
-#             await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Error al verificar la VPN (programado): Falló la conexión.")
-#         else:
-#             logger.warning("No allowed user IDs configured to send VPN error alert.")
-#     except json.JSONDecodeError:
-#         logger.exception("Failed to decode JSON from IP check response (scheduled job)")
-#         if ALLOWED_USER_IDS:
-#             await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Error al procesar la respuesta de la VPN (programado): Respuesta inválida.")
-#         else:
-#             logger.warning("No allowed user IDs configured to send VPN JSON error alert.")
-#     except Exception:
-#         logger.exception("An unexpected error occurred during VPN check (scheduled job)")
-#         if ALLOWED_USER_IDS:
-#             await context.bot.send_message(chat_id=ALLOWED_USER_IDS[0], text="🚨 Error inesperado al verificar la VPN (programado).")
-#         else:
-#             logger.warning("No allowed user IDs configured to send unexpected VPN error alert.")
-
-# async def vpnstatus_command(update: Update, context: CallbackContext) -> None:
-#     """Checks the public IP and sends a Telegram alert if the country is not Netherlands."""
-#     logger.info("Checking public IP (command)...")
-#     if not gluetunUser or not gluetunPass:
-#         await update.message.reply_text("Credenciales de Gluetun no configuradas.")
-#         return
-
-#     url = "http://192.168.1.137:8111/v1/publicip/ip"  #Gluetun
-    
-#     try:
-#         response = requests.get(url, auth=(gluetunUser, gluetunPass), timeout=10)
-#         response.raise_for_status() 
-
-#         ip_info = response.json()
-#         logger.debug(f"IP Info response: {ip_info}")
-
-#         if "country" in ip_info and ip_info["country"] == "Netherlands":
-#             await update.message.reply_text("VPN IP is in Netherlands. All good.")
-
-#             # Removed check and reset logic as requested.
-
-#         else:
-#             await update.message.reply_text(f"🚨 Alerta: La VPN parece estar caída o no está en Países Bajos. Current country: {ip_info.get('country', 'N/A')}.")
-
-
-        
-
-
-
-    # except requests.exceptions.RequestException:
-    #     logger.exception("Error checking public IP (command)")
-    #     await update.message.reply_text("🚨 Error al verificar la VPN: Falló la conexión.")
-    # except json.JSONDecodeError:
-    #     logger.exception("Failed to decode JSON from IP check response (command)")
-    #     await update.message.reply_text("🚨 Error al procesar la respuesta de la VPN: Respuesta inválida.")
-    # except Exception:
-    #     logger.exception("An unexpected error occurred during VPN check (command)")
-    #     await update.message.reply_text("🚨 Error inesperado al verificar la VPN.")
 
 
 async def downloads_command(update: Update, context: CallbackContext) -> None:
@@ -186,6 +99,7 @@ async def start(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
         [InlineKeyboardButton("📺 Series", callback_data='series')],
+        [InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=chat_id_msg,text=f"Hi {user.mention_html()}! What would you like to search for?",reply_markup=reply_markup, parse_mode='HTML')
@@ -208,7 +122,11 @@ async def search_type_chosen(update: Update, context: CallbackContext) -> int:
         return await _restart_conversation(update, context)
 
     context.user_data['search_type'] = search_type
-    await query.edit_message_text(f"Okay, searching for a {search_type}. Please enter the title:")
+    
+    if search_type == 'spotify':
+        await query.edit_message_text("Okay, please enter the Spotify Playlist URL:")
+    else:
+        await query.edit_message_text(f"Okay, searching for a {search_type}. Please enter the title:")
     return SEARCH_QUERY
 
 async def _render_search_results(update: Update, context: CallbackContext, results: list) -> int:
@@ -243,6 +161,93 @@ async def search_query_received(update: Update, context: CallbackContext) -> int
     if not is_user_allowed(user_id):
         await update.message.reply_text("Sorry, you are not authorized.")
         return ConversationHandler.END
+
+    if search_type == 'spotify':
+        #await update.message.reply_text(f"Processing Spotify URL: '{html.escape(query_text)}'...")
+        try:
+            payload1 = {"search": query_text}
+            res1 = requests.post("http://192.168.1.137:9030/api/saved-items", json=payload1, timeout=15)
+            res1.raise_for_status()
+            data = res1.json()
+
+            playlist = None
+            if isinstance(data, list):
+                for item in data:
+                    if item.get("type") == "spotify-playlist":
+                        playlist = item
+                        break
+
+            if not playlist:
+                await update.message.reply_text("Could not find a valid Spotify playlist from that URL.")
+                return await _restart_conversation(update, context)
+
+            title = playlist.get("title", "Unknown Playlist")
+            image_url = playlist.get("image")
+            playlist_id = playlist.get("id")
+
+            if not playlist_id:
+                await update.message.reply_text("Playlist ID not found in the response.")
+                return await _restart_conversation(update, context)
+
+            title_str = html.escape(str(title))
+            message_text = f"✅ Successfully added Spotify Playlist:\n<b>{title_str}</b>"
+
+            keyboard = [
+                [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
+                [InlineKeyboardButton("📺 Series", callback_data='series')],
+                [InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            if image_url:
+                try:
+                    await context.bot.send_photo(
+                        chat_id=update.effective_chat.id,
+                        photo=image_url,
+                        caption=message_text,
+                        parse_mode='HTML'
+                    )
+                except Exception:
+                    logger.exception(f"Failed to send photo {image_url}. Sending text instead.")
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=message_text,
+                        parse_mode='HTML'
+                    )
+            else:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=message_text,
+                    parse_mode='HTML'
+                )
+
+            # PUT to sync
+            await asyncio.sleep(1)
+            payload2 = {"ids": [playlist_id], "sync": True, "sync_interval": "10", "label": ""}
+            res2 = requests.put("http://192.168.1.137:9030/api/saved-items", json=payload2, timeout=15)
+            res2.raise_for_status()
+
+            context.user_data.pop('search_type', None)
+
+            # Send the ending prompt
+            user = update.effective_user
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id, 
+                text=f"Hi {user.mention_html()}! What would you like to search for next?",
+                reply_markup=reply_markup, 
+                parse_mode='HTML'
+            )
+
+            return ConversationHandler.END
+
+        except requests.RequestException as e:
+            logger.exception("Network error while adding Spotify playlist")
+            await update.message.reply_text(f"A network error occurred: {e}")
+            return await _restart_conversation(update, context)
+        except Exception as e:
+            logger.exception("Unexpected error adding Spotify playlist")
+            await update.message.reply_text("An unexpected error occurred while adding the Spotify playlist. Check logs.")
+            return await _restart_conversation(update, context)
 
     await update.message.reply_text(f"Searching for {search_type}: '{html.escape(query_text)}'...")
 
@@ -462,6 +467,7 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
         [InlineKeyboardButton("📺 Series", callback_data='series')],
+        [InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Hi {user.mention_html()}! What would you like to search for next?",reply_markup=reply_markup, parse_mode='HTML')
@@ -491,8 +497,8 @@ async def unknown_state_handler(update: Update, context: CallbackContext) -> int
     if update.callback_query:
         try:
             await update.callback_query.answer()
-        except Exception:
-            pass 
+        except Exception as e:
+            logger.warning(f"Could not answer callback query: {e}")
         
         try:
             await update.callback_query.edit_message_text(message_to_user)
