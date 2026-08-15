@@ -1,6 +1,7 @@
 # Telegram Sonarr/Radarr/qBittorrent Bot
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/uniextra/plexarrs.svg)](https://hub.docker.com/r/uniextra/plexarrs)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-Ko--fi-red?logo=ko-fi&logoColor=white)](https://ko-fi.com/uniextra)
 This bot allows you to interact with your Sonarr and Radarr instances via Telegram to search for and add movies or series. It also includes functionality to view the status of your qBittorrent downloads.
 
 ## Prerequisites
@@ -92,3 +93,9 @@ This method uses the pre-built Docker image available on Docker Hub, suitable if
 8.  **Deploy:** Click the "Deploy the container" button.
 
 Portainer will pull the `uniextra/plexarrs:latest` image from Docker Hub and start the container with the environment variables you provided. You can check the container's logs in Portainer to verify it's running correctly.
+
+## Support
+
+If you find this project helpful, consider supporting its development:
+
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-Ko--fi-red?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/uniextra)
