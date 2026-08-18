@@ -1,6 +1,7 @@
 # Telegram Sonarr/Radarr/qBittorrent Bot
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/uniextra/plexarrs.svg)](https://hub.docker.com/r/uniextra/plexarrs)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-Ko--fi-red?logo=ko-fi&logoColor=white)](https://ko-fi.com/uniextra)
 This bot allows you to interact with your Sonarr and Radarr instances via Telegram to search for and add movies or series. It also includes functionality to view the status of your qBittorrent downloads.
 
@@ -99,3 +100,7 @@ Portainer will pull the `uniextra/plexarrs:latest` image from Docker Hub and sta
 If you find this project helpful, consider supporting its development:
 
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-Ko--fi-red?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/uniextra)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
