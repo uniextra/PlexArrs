@@ -1,34 +1,48 @@
 import logging
 import requests
 import json
-import os # Import os to access environment variables
+from functools import wraps
+from telegram import Update
+from telegram.ext import CallbackContext, ConversationHandler
+
+from config import ALLOWED_USER_IDS, DEFAULT_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 15
-
-# Load ALLOWED_USER_IDS from environment variables
-allowed_users_str = os.environ.get('ALLOWED_USER_IDS')
-ALLOWED_USER_IDS = [int(user_id.strip()) for user_id in allowed_users_str.split(',') if user_id.strip()] if allowed_users_str else None
+# Shared HTTP Session with Connection Pooling
+http_session = requests.Session()
 
 
 def is_user_allowed(user_id: int) -> bool:
-    """Checks if the user is allowed to use the bot based on environment variable."""
+    """Checks if the user is allowed to use the bot based on configured allowed IDs."""
     if not ALLOWED_USER_IDS:
         return True
     return user_id in ALLOWED_USER_IDS
 
-def make_api_request(base_url: str, api_key: str, endpoint: str, params: dict = None) -> dict | None:
-    """Makes a generic API request."""
+
+def restricted(func):
+    """Decorator to restrict handler execution to authorized Telegram users only."""
+    @wraps(func)
+    async def wrapped(update: Update, context: CallbackContext, *args, **kwargs):
+        user = update.effective_user
+        if not user or not is_user_allowed(user.id):
+            logger.warning(f"Unauthorized access attempt by user {user.id if user else 'Unknown'}")
+            if update.effective_message:
+                await update.effective_message.reply_text("⛔ Sorry, you are not authorized to use this bot.")
+            elif update.callback_query:
+                await update.callback_query.answer("⛔ Unauthorized.", show_alert=True)
+            return ConversationHandler.END
+        return await func(update, context, *args, **kwargs)
+    return wrapped
+
+
+def make_api_request(base_url: str, api_key: str, endpoint: str, params: dict | None = None) -> list | dict | None:
+    """Makes a generic API GET request using the shared session."""
     headers = {'X-Api-Key': api_key}
     url = f"{base_url}/api/v3/{endpoint}"
-    full_url = url
-    if params:
-        query_string = '&'.join([f"{k}={requests.utils.quote(str(v))}" for k, v in params.items()])
-        full_url += f"?{query_string}"
-    logger.info(f"Attempting API request to: {full_url}")
+    logger.info(f"Attempting API request to: {url} with params: {params}")
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=DEFAULT_TIMEOUT)
+        response = http_session.get(url, headers=headers, params=params, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
         logger.debug(f"API request successful for {url}. Status: {response.status_code}")
         return response.json()

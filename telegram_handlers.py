@@ -1,261 +1,308 @@
 import logging
-# From telegram library
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
-# From our modules
-from utils import is_user_allowed
+import html
+import asyncio
+import requests
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CallbackContext, ConversationHandler
+
+from config import DEFAULT_TIMEOUT
+from utils import restricted, http_session
 from sonarr_client import search_sonarr, add_series_to_sonarr
 from radarr_client import search_radarr, add_movie_to_radarr
 from qb_client import get_qbittorrent_downloads
-# Other standard libraries if needed by handlers
-import requests # For vpn check
-import json # For vpn check
-import os # For any remaining manual traceback (should be minimal)
-import html # Added for HTML escaping
-import asyncio # For sleep
 
 logger = logging.getLogger(__name__)
 
-# Allowed User IDs - handle as a list of integers
-allowed_users_str = os.environ.get('ALLOWED_USER_IDS')
-ALLOWED_USER_IDS = [int(user_id.strip()) for user_id in allowed_users_str.split(',') if user_id.strip()] if allowed_users_str else None
-
-# Conversation states (assuming these were imported from config)
+# Conversation states
 SEARCH_TYPE, SEARCH_QUERY, CHOOSE_ITEM, CONFIRM_ADD = range(4)
 
 
-# Helper function (originally in main.py, now here as it's closely tied to handlers)
-async def _restart_conversation(update: Update, context: CallbackContext) -> int:
-    """Cleans up user data and sends the initial prompt, restarting the conversation and returning to type selection."""
-    logger.info("Restarting conversation and returning to type selection.")
-
-    # Clean up user data defensively
-    for key in ['search_type', 'search_results', 'chosen_item']:
+def _clear_user_data(context: CallbackContext) -> None:
+    """Safely cleans up all conversation-related keys from context.user_data."""
+    for key in ['search_type', 'search_results', 'chosen_item', '_state_name']:
         context.user_data.pop(key, None)
 
-    user = update.effective_user
+
+def _build_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """Builds the standard selection keyboard."""
     keyboard = [
         [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
         [InlineKeyboardButton("📺 Series", callback_data='series')],
         [InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    message_text = f"Hi {user.mention_html()}! What would you like to search for?"
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def _restart_conversation(update: Update, context: CallbackContext) -> int:
+    """Cleans up user data and sends the initial prompt, restarting the conversation."""
+    logger.info("Restarting conversation and returning to main selection.")
+    _clear_user_data(context)
+
+    user = update.effective_user
+    user_name = user.mention_html() if user else "there"
+    message_text = f"Hi {user_name}! What would you like to search for?"
+    reply_markup = _build_main_menu_keyboard()
 
     query = update.callback_query
     if query:
-        await query.answer()
+        try:
+            await query.answer()
+        except Exception as e:
+            logger.warning(f"Could not answer callback query during restart: {e}")
         try:
             await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode='HTML')
         except Exception:
-            # If editing fails (e.g., message too old, or not found), send a new message.
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=message_text, reply_markup=reply_markup, parse_mode='HTML')
-    else:
-        # If no query, it's likely a message handler context (e.g. /cancel command)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=message_text, reply_markup=reply_markup, parse_mode='HTML')
+            if update.effective_chat:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=message_text,
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
+                )
+    elif update.effective_chat:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=message_text,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
 
     return ConversationHandler.END
 
 
+@restricted
+async def start(update: Update, context: CallbackContext) -> int:
+    """Sends welcome message and displays search options."""
+    _clear_user_data(context)
+    user = update.effective_user
+    user_name = user.mention_html() if user else "there"
+    reply_markup = _build_main_menu_keyboard()
+
+    if update.effective_chat:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Hi {user_name}! What would you like to search for?",
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+    return SEARCH_TYPE
+
+
+@restricted
+async def help_command(update: Update, context: CallbackContext) -> None:
+    """Displays help information."""
+    if update.message:
+        await update.message.reply_text(
+            "🤖 <b>Bot Commands:</b>\n\n"
+            "• /start - Start a new search for Movies, Series, or Spotify\n"
+            "• /downloads - Check active qBittorrent downloads\n"
+            "• /help - Show this help message\n"
+            "• /cancel - Cancel the current action",
+            parse_mode='HTML'
+        )
+
+
+@restricted
 async def downloads_command(update: Update, context: CallbackContext) -> None:
-    """Handles the /downloads command."""
-    # user = update.effective_user # Not used
+    """Handles the /downloads command non-blockingly with safe message splitting."""
+    if not update.message:
+        return
 
-    await update.message.reply_text("Fetching download status from qBittorrent...")
+    await update.message.reply_text("⏳ Fetching download status from qBittorrent...")
 
-    message, error = get_qbittorrent_downloads()
+    # Run blocking qBittorrent I/O in a separate thread to avoid freezing the event loop
+    message, error = await asyncio.to_thread(get_qbittorrent_downloads)
 
     keyboard = [[InlineKeyboardButton("⬅️ Back", callback_data='back_to_start')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if error:
-        await update.message.reply_text(f"Error: {error}", reply_markup=reply_markup)
-    elif message:
-        max_len = 4096
-        if len(message) == 0: # Should be handled by get_qbittorrent_downloads returning specific message
-            await update.message.reply_text('No active Downloads', parse_mode='HTML', reply_markup=reply_markup)
-        elif len(message) > max_len:
-             for i in range(0, len(message), max_len):
-                  # Only add reply_markup to the last message part if splitting
-                  current_reply_markup = reply_markup if i + max_len >= len(message) else None
-                  await update.message.reply_text(message[i:i+max_len], parse_mode='HTML', reply_markup=current_reply_markup)
-        else:
-            try:
-                await update.message.reply_text(message, parse_mode='HTML', reply_markup=reply_markup)
-            except Exception: # Catch more specific telegram.error.BadRequest if possible
-                logger.exception(f"Failed to send message (possibly due to Markdown formatting): {message}")
-                await update.message.reply_text("Failed to send download status due to formatting. Check logs. Will try plain text.", reply_markup=reply_markup)
-                await update.message.reply_text(message, reply_markup=reply_markup) # Fallback to plain text
+        await update.message.reply_text(f"❌ Error: {error}", reply_markup=reply_markup)
+        return
+
+    if not message:
+        await update.message.reply_text("Could not retrieve download status or no active downloads.", reply_markup=reply_markup)
+        return
+
+    # Split message safely by lines if length exceeds Telegram limits (4096 chars)
+    max_len = 4000
+    if len(message) <= max_len:
+        try:
+            await update.message.reply_text(message, parse_mode='HTML', reply_markup=reply_markup)
+        except Exception:
+            logger.exception("Failed to send formatted HTML download message. Falling back to plain text.")
+            await update.message.reply_text(message, reply_markup=reply_markup)
     else:
-        await update.message.reply_text("Could not retrieve download status or no downloads.", reply_markup=reply_markup)
+        lines = message.split('\n')
+        chunks = []
+        current_chunk = []
+        current_len = 0
+
+        for line in lines:
+            if current_len + len(line) + 1 > max_len:
+                chunks.append('\n'.join(current_chunk))
+                current_chunk = [line]
+                current_len = len(line) + 1
+            else:
+                current_chunk.append(line)
+                current_len += len(line) + 1
+
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+
+        for idx, chunk in enumerate(chunks):
+            is_last = (idx == len(chunks) - 1)
+            chunk_markup = reply_markup if is_last else None
+            try:
+                await update.message.reply_text(chunk, parse_mode='HTML', reply_markup=chunk_markup)
+            except Exception:
+                await update.message.reply_text(chunk, reply_markup=chunk_markup)
 
 
-async def start(update: Update, context: CallbackContext) -> int:
-    """Sends a welcome message and asks what to search for."""
-    user = update.effective_user 
-    chat_id_msg = update.effective_chat.id # Simplified
-
-    keyboard = [
-        [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
-        [InlineKeyboardButton("📺 Series", callback_data='series')],
-        [InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await context.bot.send_message(chat_id=chat_id_msg,text=f"Hi {user.mention_html()}! What would you like to search for?",reply_markup=reply_markup, parse_mode='HTML')
-    return SEARCH_TYPE
-
-async def help_command(update: Update, context: CallbackContext) -> None:
-    """Displays help information."""
-    await update.message.reply_text(
-        "Use /start to begin searching for movies or series.\n"
-        "I will ask you for the title, show you the results, and you can choose one to add to Radarr or Sonarr."
-    )
-
+@restricted
 async def search_type_chosen(update: Update, context: CallbackContext) -> int:
-    """Stores the chosen search type (movie/series) and asks for the search query."""
+    """Stores the chosen search type and asks for query."""
     query = update.callback_query
-    await query.answer()
-    search_type = query.data
+    if not query:
+        return ConversationHandler.END
 
-    if search_type == 'cancel': # Should match a cancel button if one exists at this stage
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"Could not answer callback query: {e}")
+
+    search_type = query.data
+    if search_type == 'cancel':
         return await _restart_conversation(update, context)
 
     context.user_data['search_type'] = search_type
-    
+
     if search_type == 'spotify':
-        await query.edit_message_text("Okay, please enter the Spotify Playlist URL:")
+        await query.edit_message_text("🎵 Please enter the Spotify Playlist URL:")
     else:
-        await query.edit_message_text(f"Okay, searching for a {search_type}. Please enter the title:")
+        await query.edit_message_text(f"🔍 Searching for a <b>{html.escape(str(search_type))}</b>. Please enter the title:", parse_mode='HTML')
     return SEARCH_QUERY
+
 
 async def _render_search_results(update: Update, context: CallbackContext, results: list) -> int:
     """Displays search results with inline buttons."""
-    # No try-except here, will be handled by global error handler or calling function's try-except
     context.user_data['search_results'] = results
     keyboard = []
     for i, item in enumerate(results[:10]):
         title = item.get('title', 'N/A')
         year = item.get('year', '')
-        # HTML escape title for button text if it can contain special characters
-        button_text = f"{html.escape(str(title))} ({year})" if year else html.escape(str(title))
+        button_text = f"{title} ({year})" if year else str(title)
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f'choose_{i}')])
 
-    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data='cancel')]) # Universal cancel
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data='cancel')])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     message_text = "Here's what I found:"
-    if update.callback_query: # If called from a button press (like 'back')
+    if update.callback_query:
         await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup)
-    else: # If called after a text message (initial search)
+    elif update.message:
         await update.message.reply_text(message_text, reply_markup=reply_markup)
     return CHOOSE_ITEM
 
 
-async def search_query_received(update: Update, context: CallbackContext) -> int:
-    """Performs the search based on the type and query, then displays results."""
-    query_text = update.message.text
-    search_type = context.user_data.get('search_type')
-    user_id = update.effective_user.id
+def _sync_spotify_playlist(query_text: str) -> tuple[dict | None, str | None]:
+    """Helper to communicate with Spotify service synchronously in worker thread."""
+    try:
+        payload1 = {"search": query_text}
+        res1 = http_session.post("http://192.168.1.137:9030/api/saved-items", json=payload1, timeout=DEFAULT_TIMEOUT)
+        res1.raise_for_status()
+        data = res1.json()
 
-    if not is_user_allowed(user_id):
-        await update.message.reply_text("Sorry, you are not authorized.")
+        playlist = None
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and item.get("type") == "spotify-playlist":
+                    playlist = item
+                    break
+
+        if not playlist:
+            return None, "Could not find a valid Spotify playlist from that URL."
+
+        playlist_id = playlist.get("id")
+        if not playlist_id:
+            return None, "Playlist ID not found in the response."
+
+        payload2 = {"ids": [playlist_id], "sync": True, "sync_interval": "10", "label": ""}
+        res2 = http_session.put("http://192.168.1.137:9030/api/saved-items", json=payload2, timeout=DEFAULT_TIMEOUT)
+        res2.raise_for_status()
+
+        return playlist, None
+    except requests.RequestException as e:
+        logger.exception("Network error while adding Spotify playlist")
+        return None, f"Network error: {e}"
+    except Exception as e:
+        logger.exception("Unexpected error while adding Spotify playlist")
+        return None, f"Unexpected error: {e}"
+
+
+@restricted
+async def search_query_received(update: Update, context: CallbackContext) -> int:
+    """Performs search in worker thread and renders results."""
+    if not update.message or not update.message.text:
         return ConversationHandler.END
 
+    query_text = update.message.text.strip()
+    search_type = context.user_data.get('search_type')
+
     if search_type == 'spotify':
-        #await update.message.reply_text(f"Processing Spotify URL: '{html.escape(query_text)}'...")
-        try:
-            payload1 = {"search": query_text}
-            res1 = requests.post("http://192.168.1.137:9030/api/saved-items", json=payload1, timeout=15)
-            res1.raise_for_status()
-            data = res1.json()
+        await update.message.reply_text("⏳ Processing Spotify playlist...")
+        playlist, error = await asyncio.to_thread(_sync_spotify_playlist, query_text)
 
-            playlist = None
-            if isinstance(data, list):
-                for item in data:
-                    if item.get("type") == "spotify-playlist":
-                        playlist = item
-                        break
+        if error or not playlist:
+            await update.message.reply_text(f"❌ {error or 'Failed to add Spotify playlist.'}")
+            return await _restart_conversation(update, context)
 
-            if not playlist:
-                await update.message.reply_text("Could not find a valid Spotify playlist from that URL.")
-                return await _restart_conversation(update, context)
+        title = playlist.get("title", "Unknown Playlist")
+        image_url = playlist.get("image")
+        title_str = html.escape(str(title))
+        message_text = f"✅ Successfully added Spotify Playlist:\n<b>{title_str}</b>"
+        reply_markup = _build_main_menu_keyboard()
 
-            title = playlist.get("title", "Unknown Playlist")
-            image_url = playlist.get("image")
-            playlist_id = playlist.get("id")
-
-            if not playlist_id:
-                await update.message.reply_text("Playlist ID not found in the response.")
-                return await _restart_conversation(update, context)
-
-            title_str = html.escape(str(title))
-            message_text = f"✅ Successfully added Spotify Playlist:\n<b>{title_str}</b>"
-
-            keyboard = [
-                [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
-                [InlineKeyboardButton("📺 Series", callback_data='series')],
-                [InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            if image_url:
-                try:
-                    await context.bot.send_photo(
-                        chat_id=update.effective_chat.id,
-                        photo=image_url,
-                        caption=message_text,
-                        parse_mode='HTML'
-                    )
-                except Exception:
-                    logger.exception(f"Failed to send photo {image_url}. Sending text instead.")
-                    await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=message_text,
-                        parse_mode='HTML'
-                    )
-            else:
+        if image_url:
+            try:
+                await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=image_url,
+                    caption=message_text,
+                    parse_mode='HTML'
+                )
+            except Exception:
+                logger.exception(f"Failed to send photo {image_url}. Sending text instead.")
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
                     text=message_text,
                     parse_mode='HTML'
                 )
-
-            # PUT to sync
-            await asyncio.sleep(1)
-            payload2 = {"ids": [playlist_id], "sync": True, "sync_interval": "10", "label": ""}
-            res2 = requests.put("http://192.168.1.137:9030/api/saved-items", json=payload2, timeout=15)
-            res2.raise_for_status()
-
-            context.user_data.pop('search_type', None)
-
-            # Send the ending prompt
-            user = update.effective_user
+        else:
             await context.bot.send_message(
-                chat_id=update.effective_chat.id, 
-                text=f"Hi {user.mention_html()}! What would you like to search for next?",
-                reply_markup=reply_markup, 
+                chat_id=update.effective_chat.id,
+                text=message_text,
                 parse_mode='HTML'
             )
 
-            return ConversationHandler.END
+        context.user_data.pop('search_type', None)
+        user = update.effective_user
+        user_name = user.mention_html() if user else "there"
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Hi {user_name}! What would you like to search for next?",
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
 
-        except requests.RequestException as e:
-            logger.exception("Network error while adding Spotify playlist")
-            await update.message.reply_text(f"A network error occurred: {e}")
-            return await _restart_conversation(update, context)
-        except Exception as e:
-            logger.exception("Unexpected error adding Spotify playlist")
-            await update.message.reply_text("An unexpected error occurred while adding the Spotify playlist. Check logs.")
-            return await _restart_conversation(update, context)
-
-    await update.message.reply_text(f"Searching for {search_type}: '{html.escape(query_text)}'...")
+    await update.message.reply_text(f"⏳ Searching for {search_type}: <i>{html.escape(query_text)}</i>...", parse_mode='HTML')
 
     results = []
     if search_type == 'movie':
-        results = search_radarr(query_text) # query_text is not escaped for API call
+        results = await asyncio.to_thread(search_radarr, query_text)
     elif search_type == 'series':
-        results = search_sonarr(query_text) # query_text is not escaped for API call
+        results = await asyncio.to_thread(search_sonarr, query_text)
 
     if results is None:
         return await _restart_conversation(update, context)
@@ -266,66 +313,54 @@ async def search_query_received(update: Update, context: CallbackContext) -> int
     return await _render_search_results(update, context, results)
 
 
+@restricted
 async def item_chosen(update: Update, context: CallbackContext) -> int:
-    """Handles the user's choice from the search results and asks for confirmation."""
+    """Handles item selection from search results and displays confirmation card."""
     query = update.callback_query
-    await query.answer()
+    if not query:
+        return ConversationHandler.END
+
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"Could not answer callback query: {e}")
+
     callback_data = query.data
 
     if callback_data == 'cancel':
         return await _restart_conversation(update, context)
-    if callback_data == 'back_to_results': 
+    if callback_data == 'back_to_results':
         results = context.user_data.get('search_results')
         if results:
-            # Delete the current message (confirmation message) before showing results again
-            await query.delete_message() 
+            await query.delete_message()
             return await _render_search_results(update, context, results)
-        else: 
-            return await _restart_conversation(update, context)
+        return await _restart_conversation(update, context)
 
-
-    if not callback_data.startswith('choose_'):
+    if not callback_data or not callback_data.startswith('choose_'):
         return await _restart_conversation(update, context)
 
     try:
         choice_index = int(callback_data.split('_')[1])
-        results = context.user_data.get('search_results', []) 
-        if not 0 <= choice_index < len(results):
+        results = context.user_data.get('search_results', [])
+        if not (0 <= choice_index < len(results)):
             raise ValueError("Choice index out of bounds.")
 
         chosen_item = results[choice_index]
         context.user_data['chosen_item'] = chosen_item
-
-        # # Send the full JSON for debugging
-        # try:
-        #     await context.bot.send_message(
-        #         chat_id=update.effective_chat.id,
-        #         text=f"DEBUG: Chosen Item JSON:\n<pre>{html.escape(json.dumps(chosen_item, indent=2))}</pre>",
-        #         parse_mode='HTML'
-        #     )
-        # except Exception as e:
-        #     logger.exception(f"Failed to send debug JSON message: {e}")
-        #     await context.bot.send_message(
-        #         chat_id=update.effective_chat.id,
-        #         text="DEBUG: Could not send chosen item JSON."
-        #     )
 
         title = chosen_item.get('title', 'N/A')
         year = chosen_item.get('year', '')
         overview = chosen_item.get('overview', 'No description available.')
         poster_url = None
         images = chosen_item.get('images', [])
-        if images:
-            poster_info = next((img for img in images if img.get('coverType') == 'poster'), None)
+        if isinstance(images, list):
+            poster_info = next((img for img in images if isinstance(img, dict) and img.get('coverType') == 'poster'), None)
             if poster_info:
                 poster_url = poster_info.get('remoteUrl') or poster_info.get('url')
 
-
-        
         title_str = html.escape(str(title) if title is not None else 'N/A')
         overview_str = html.escape(str(overview) if overview is not None else 'No description available.')
-        
-        # Attempt to get rating information
+
         rating_value = None
         ratings_data = chosen_item.get('ratings')
         if isinstance(ratings_data, dict) and ratings_data.get('value') is not None:
@@ -334,7 +369,7 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
         message_text = f"<b>{title_str} ({year})</b>\n\n{overview_str}"
         if rating_value is not None:
             message_text += f"\n\n❤️ {rating_value}"
-        
+
         keyboard = [
             [InlineKeyboardButton("✅ Add this", callback_data='confirm_add')],
             [InlineKeyboardButton("⬅️ Back to search results", callback_data='back_to_results')],
@@ -342,18 +377,18 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await query.delete_message() # Delete the "Here's what I found" message (results list)
+        await query.delete_message()
 
-        if poster_url:
+        if poster_url and update.effective_chat:
             try:
-                await context.bot.send_photo( 
+                await context.bot.send_photo(
                     chat_id=update.effective_chat.id,
                     photo=poster_url,
                     caption=message_text,
                     reply_markup=reply_markup,
                     parse_mode='HTML'
                 )
-            except Exception: 
+            except Exception:
                 logger.exception(f"Failed to send photo {poster_url}. Sending text instead.")
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
@@ -361,7 +396,7 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
                     reply_markup=reply_markup,
                     parse_mode='HTML'
                 )
-        else:
+        elif update.effective_chat:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text=message_text,
@@ -370,144 +405,125 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
             )
         return CONFIRM_ADD
 
-    except (ValueError, IndexError) :
+    except (ValueError, IndexError):
         logger.exception("Error processing item choice (ValueError or IndexError)")
         return await _restart_conversation(update, context)
-    except Exception: 
+    except Exception:
         logger.exception("Unexpected error in item_chosen")
         return await _restart_conversation(update, context)
 
 
+@restricted
 async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
-    """Adds the chosen item to Sonarr/Radarr."""
+    """Adds the chosen item to Sonarr/Radarr non-blockingly."""
     query = update.callback_query
-    await query.answer()
+    if not query:
+        return ConversationHandler.END
+
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"Could not answer callback query: {e}")
+
     callback_data = query.data
-    
-    original_message_id = query.message.message_id # Store for potential later use if caption fails
-    original_chat_id = query.message.chat_id
 
     if callback_data == 'back_to_results':
-        await query.delete_message() 
+        await query.delete_message()
         results = context.user_data.get('search_results')
-        if results: 
+        if results:
             return await _render_search_results(update, context, results)
-        else: 
-            return await _restart_conversation(update, context)
-    
-    if callback_data == 'cancel_search_completely':
-        await query.delete_message() 
         return await _restart_conversation(update, context)
 
-    if callback_data != 'confirm_add':
-        await query.delete_message() 
+    if callback_data == 'cancel_search_completely' or callback_data != 'confirm_add':
+        await query.delete_message()
         return await _restart_conversation(update, context)
 
     chosen_item = context.user_data.get('chosen_item')
     search_type = context.user_data.get('search_type')
 
-    if not chosen_item or not search_type :
+    if not chosen_item or not search_type:
         logger.error("Missing context (chosen_item or search_type) in add_item_confirmed.")
-        await query.delete_message() 
+        await query.delete_message()
         return await _restart_conversation(update, context)
 
     title = chosen_item.get('title', 'N/A')
-    title_str = html.escape(str(title) if title is not None else 'N/A') # Escaped title
-    
-    caption_text_adding = f"⏳ Adding '{title_str}' to {'Sonarr' if search_type == 'series' else 'Radarr'}..."
+    title_str = html.escape(str(title) if title is not None else 'N/A')
+    target_service = 'Sonarr' if search_type == 'series' else 'Radarr'
+
+    caption_text_adding = f"⏳ Adding '{title_str}' to {target_service}..."
     try:
-        if query.message.caption:
+        if query.message and query.message.caption:
             await query.edit_message_caption(caption=caption_text_adding, parse_mode='HTML', reply_markup=None)
-        else:
+        elif query.message:
             await query.edit_message_text(text=caption_text_adding, parse_mode='HTML', reply_markup=None)
-    except Exception as e_edit_adding:
-        logger.exception(f"Failed to edit message to 'Adding...': {e_edit_adding}. Attempting to send as new message.")
-        try:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=caption_text_adding, parse_mode='HTML')
-            # Attempt to delete the original message with buttons
-            await query.delete_message()
-        except Exception as e_send_new:
-            logger.exception(f"Failed to send new 'Adding...' message or delete original: {e_send_new}")
+    except Exception as e_edit:
+        logger.warning(f"Could not edit message to 'Adding...': {e_edit}")
 
-    success = False
+    # Perform blocking add in worker thread
+    add_result = False
     if search_type == 'movie':
-        add_result = add_movie_to_radarr(chosen_item)
+        add_result = await asyncio.to_thread(add_movie_to_radarr, chosen_item)
     elif search_type == 'series':
-        add_result = add_series_to_sonarr(chosen_item)
+        add_result = await asyncio.to_thread(add_series_to_sonarr, chosen_item)
 
-    result_text = ""
     if add_result is True:
-        result_text = f"✅ Successfully added '{title_str}' and started search."
+        result_text = f"✅ Successfully added <b>{title_str}</b> and started search."
     elif isinstance(add_result, str):
-        if add_result == 'SeriesExistsValidator' or add_result == 'MovieExistsValidator':
-            result_text = f"⚠️ '{title_str}' already exists in {'Sonarr' if search_type == 'series' else 'Radarr'}."
+        if add_result in ('SeriesExistsValidator', 'MovieExistsValidator'):
+            result_text = f"⚠️ <b>{title_str}</b> already exists in {target_service}."
         else:
-            result_text = f"❌ Failed to add '{title_str}'. Error code: {add_result}. Check logs for details."
+            result_text = f"❌ Failed to add <b>{title_str}</b>. Error code: <code>{add_result}</code>."
     else:
-        result_text = f"❌ Failed to add '{title_str}'. Check logs for details."
-    
+        result_text = f"❌ Failed to add <b>{title_str}</b>. Check logs for details."
+
     try:
-        if query.message.caption:
+        if query.message and query.message.caption:
             await query.edit_message_caption(caption=result_text, parse_mode='HTML', reply_markup=None)
-        else:
+        elif query.message:
             await query.edit_message_text(text=result_text, parse_mode='HTML', reply_markup=None)
-    except Exception as e_edit_final:
-        logger.exception(f"Failed to edit message with final result: {e_edit_final}. Attempting to send as new message.")
-        try:
-            # No need to delete original message here if edit failed, as it's already the final status.
+    except Exception:
+        if update.effective_chat:
             await context.bot.send_message(chat_id=update.effective_chat.id, text=result_text, parse_mode='HTML')
-        except Exception as e_send_new_final:
-            logger.exception(f"Failed to send new final result message: {e_send_new_final}")
 
-    context.user_data.pop('search_type', None)
-    context.user_data.pop('search_results', None)
-    context.user_data.pop('chosen_item', None)
-    
+    _clear_user_data(context)
+
     user = update.effective_user
-    keyboard = [
-        [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
-        [InlineKeyboardButton("📺 Series", callback_data='series')],
-        [InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Hi {user.mention_html()}! What would you like to search for next?",reply_markup=reply_markup, parse_mode='HTML')
+    user_name = user.mention_html() if user else "there"
+    reply_markup = _build_main_menu_keyboard()
 
-    return ConversationHandler.END 
+    if update.effective_chat:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Hi {user_name}! What would you like to search for next?",
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
 
-async def cancel_conversation(update: Update, context: CallbackContext) -> int:
-    """Cancels the current conversation via a /cancel command or button not in a state."""
-    return await _restart_conversation(update, context)
-
-
-async def cancel_conversation_and_restart(update: Update, context: CallbackContext) -> int:
-    """Handles 'cancel' button presses that are part of the conversation flow."""
-    return await _restart_conversation(update, context)
-
-async def unknown_command(update: Update, context: CallbackContext) -> int:
-    """Handles unknown commands during the conversation by restarting it."""
-    await update.message.reply_text("Sorry, I didn't understand that command. Let's start over.")
-    return await _restart_conversation(update, context)
-
-async def unknown_state_handler(update: Update, context: CallbackContext) -> int:
-    """Handles any unexpected message or callback query in any state, restarting conversation."""
-    current_state = context.user_data.get('_state_name', 'an unknown state') 
-    logger.warning(f"Unhandled update received in {current_state}: {update}")
-    
-    message_to_user = "Something went wrong or I received unexpected input. Let's start over."
-    if update.callback_query:
-        try:
-            await update.callback_query.answer()
-        except Exception as e:
-            logger.warning(f"Could not answer callback query: {e}")
-        
-        try:
-            await update.callback_query.edit_message_text(message_to_user)
-        except Exception:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=message_to_user)
-    else: 
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=message_to_user)
-
-    for key in ['search_type', 'search_results', 'chosen_item', '_state_name']:
-        context.user_data.pop(key, None)
-        
     return ConversationHandler.END
+
+
+@restricted
+async def cancel_conversation(update: Update, context: CallbackContext) -> int:
+    """Cancels the current conversation."""
+    return await _restart_conversation(update, context)
+
+
+@restricted
+async def cancel_conversation_and_restart(update: Update, context: CallbackContext) -> int:
+    """Handles inline cancel buttons."""
+    return await _restart_conversation(update, context)
+
+
+async def global_error_handler(update: object, context: CallbackContext) -> None:
+    """Global error handler that logs exceptions and notifies users gracefully."""
+    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+
+    if isinstance(update, Update) and update.effective_chat:
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="⚠️ An unexpected error occurred. Please try again with /start.",
+                reply_markup=_build_main_menu_keyboard()
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send error notification message: {e}")
