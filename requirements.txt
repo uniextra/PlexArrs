@@ -1,4 +1,3 @@
-python-telegram-bot==22.1
-python-telegram-bot[job-queue]
-requests==2.31.0
-qbittorrent-api==v2025.5.0
+python-telegram-bot[job-queue]==22.1
+requests==2.32.3
+qbittorrent-api==2025.5.0

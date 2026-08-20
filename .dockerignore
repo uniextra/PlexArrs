@@ -4,20 +4,18 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Ignore the config file as it's replaced by environment variables
-config.py
-
 # Ignore Docker specific files
 Dockerfile
 .dockerignore
 guia.txt
 .gitignore
+docker-compose*.yml
 
-# Ignore Git files (if using git)
+# Ignore Git files
 .git
-.gitignore
+.agent
 
-# Ignore virtual environment folders (common names)
+# Ignore virtual environment folders
 venv/
 .venv/
 env/

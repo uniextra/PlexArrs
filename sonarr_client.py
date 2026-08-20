@@ -1,80 +1,77 @@
 import logging
-import requests # For requests.post in add_series_to_sonarr
-import os # For traceback logging if still used
-import json # Import json for JSONDecodeError
-from utils import make_api_request
+import requests
+import json
+from config import (
+    SONARR_URL,
+    SONARR_API_KEY,
+    SONARR_ROOT_FOLDER_ID,
+    SONARR_QUALITY_PROFILE_ID,
+    DEFAULT_TIMEOUT,
+)
+from utils import make_api_request, http_session
 
 logger = logging.getLogger(__name__)
-
-# Load environment variables directly
-SONARR_URL = os.environ.get('SONARR_URL')
-SONARR_API_KEY = os.environ.get('SONARR_API_KEY')
-SONARR_ROOT_FOLDER_ID = int(os.environ.get('SONARR_ROOT_FOLDER_ID', 1)) # Default to 1 if not set
-SONARR_QUALITY_PROFILE_ID = int(os.environ.get('SONARR_QUALITY_PROFILE_ID', 1)) # Default to 1 if not set
 
 
 def search_sonarr(query: str) -> list:
     """Searches Sonarr for a series."""
     if not SONARR_URL or not SONARR_API_KEY:
-        # Cannot get traceback here easily as no exception is caught
-        logger.error("Sonarr URL or API Key not configured in environment variables.")
+        logger.error("Sonarr URL or API Key not configured.")
         return []
-    return make_api_request(SONARR_URL, SONARR_API_KEY, 'series/lookup', {'term': query}) or []
+    result = make_api_request(SONARR_URL, SONARR_API_KEY, 'series/lookup', {'term': query})
+    return result if isinstance(result, list) else []
+
 
 def add_series_to_sonarr(series_info: dict) -> bool | str:
     """Adds a series to Sonarr."""
     if not SONARR_URL or not SONARR_API_KEY:
-        # Cannot get traceback here easily as no exception is caught
-        logger.error("Sonarr URL or API Key not configured in environment variables.")
+        logger.error("Sonarr URL or API Key not configured.")
         return False
+
     payload = {
-        "title": series_info['title'],
-        "tvdbId": series_info['tvdbId'],
-        "qualityProfileId": SONARR_QUALITY_PROFILE_ID, # Use loaded env var
-        "rootFolderPath": f"/data/tv", # Default path, Sonarr needs the ID mapping
-        "seasons": series_info['seasons'],
+        "title": series_info.get('title'),
+        "tvdbId": series_info.get('tvdbId'),
+        "qualityProfileId": SONARR_QUALITY_PROFILE_ID,
+        "rootFolderPath": "/data/tv",
+        "seasons": series_info.get('seasons', []),
         "monitored": True,
         "monitor": "all",
         "addOptions": {
             "searchForMissingEpisodes": True
         }
     }
-    # Get the correct root folder path using the ID from env var
+
+    # Get the correct root folder path using the configured ID
     root_folders = make_api_request(SONARR_URL, SONARR_API_KEY, 'rootfolder')
-    if root_folders:
-        target_folder = next((rf['path'] for rf in root_folders if rf['id'] == SONARR_ROOT_FOLDER_ID), None) # Use loaded env var
+    if isinstance(root_folders, list) and root_folders:
+        target_folder = next((rf['path'] for rf in root_folders if rf.get('id') == SONARR_ROOT_FOLDER_ID), None)
         if target_folder:
             payload['rootFolderPath'] = target_folder
         else:
-            # Cannot get traceback here easily as no exception is caught
-            logger.error(f"Sonarr Root Folder ID {SONARR_ROOT_FOLDER_ID} not found in Sonarr's API response.") # Use loaded env var
+            logger.error(f"Sonarr Root Folder ID {SONARR_ROOT_FOLDER_ID} not found in Sonarr API response.")
             return False
     else:
-        # Cannot get traceback here easily as no exception is caught
         logger.error("Could not retrieve Sonarr root folders via API.")
         return False
 
-
-    # Correcting the add request to be a POST with JSON payload
-    headers = {'X-Api-Key': SONARR_API_KEY, 'Content-Type': 'application/json'} # Use loaded env var
-    url = f"{SONARR_URL}/api/v3/series" # Use loaded env var
-    response = None # Initialize response to None
+    headers = {'X-Api-Key': SONARR_API_KEY, 'Content-Type': 'application/json'}
+    url = f"{SONARR_URL}/api/v3/series"
+    response = None
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        response = http_session.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
-        logger.info(f"Series '{series_info['title']}' added successfully to Sonarr.")
+        logger.info(f"Series '{series_info.get('title')}' added successfully to Sonarr.")
         return True
     except requests.exceptions.RequestException as e:
-        log_message = f"Failed to add series '{series_info['title']}' to Sonarr."
+        log_message = f"Failed to add series '{series_info.get('title')}' to Sonarr."
         error_code = 'unknown_error'
         if response is not None:
             log_message += f" Sonarr response: {response.text}"
             try:
                 error_response = response.json()
                 if isinstance(error_response, list) and error_response:
-                    # Assuming the first error object contains the errorCode
                     first_error = error_response[0]
-                    if 'errorCode' in first_error:
+                    if isinstance(first_error, dict) and 'errorCode' in first_error:
                         error_code = first_error['errorCode']
             except json.JSONDecodeError:
                 logger.warning("Failed to decode Sonarr error response JSON.")
@@ -82,4 +79,4 @@ def add_series_to_sonarr(series_info: dict) -> bool | str:
                 logger.warning(f"Unexpected error parsing Sonarr error response: {json_e}")
 
         logger.exception(log_message)
-        return error_code # Return the error code or 'unknown_error'
+        return error_code

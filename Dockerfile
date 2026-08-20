@@ -1,18 +1,28 @@
-# Use an official Python runtime as a parent image
+# Use an official lightweight Python runtime
 FROM python:3.13.3-alpine3.21
 
-# Set the working directory in the container
+# Prevent Python from writing pyc files and buffer stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Set working directory
 WORKDIR /app
 
-# Copy the requirements file into the container at /app
-COPY requirements.txt .
+# Create a non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Install any needed packages specified in requirements.txt
-# Use --no-cache-dir to reduce image size
+# Install dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt --upgrade
 
-# Copy the rest of the application code into the container at /app
+# Copy application files
 COPY . .
 
-# Define the command to run the application
+# Change ownership to non-root user
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
+
+# Run application
 CMD ["python", "main.py"]

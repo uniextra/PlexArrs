@@ -1,77 +1,75 @@
 import logging
-import requests # For requests.post in add_movie_to_radarr
-import os # For traceback logging if still used
-import json # Import json for JSONDecodeError
-from utils import make_api_request
+import requests
+import json
+from config import (
+    RADARR_URL,
+    RADARR_API_KEY,
+    RADARR_ROOT_FOLDER_ID,
+    RADARR_QUALITY_PROFILE_ID,
+    DEFAULT_TIMEOUT,
+)
+from utils import make_api_request, http_session
 
 logger = logging.getLogger(__name__)
-
-# Load environment variables directly
-RADARR_URL = os.environ.get('RADARR_URL')
-RADARR_API_KEY = os.environ.get('RADARR_API_KEY')
-RADARR_ROOT_FOLDER_ID = int(os.environ.get('RADARR_ROOT_FOLDER_ID', 1)) # Default to 1 if not set
-RADARR_QUALITY_PROFILE_ID = int(os.environ.get('RADARR_QUALITY_PROFILE_ID', 1)) # Default to 1 if not set
 
 
 def search_radarr(query: str) -> list:
     """Searches Radarr for a movie."""
     if not RADARR_URL or not RADARR_API_KEY:
-        # Cannot get traceback here easily as no exception is caught
-        logger.error("Radarr URL or API Key not configured in environment variables.")
+        logger.error("Radarr URL or API Key not configured.")
         return []
-    return make_api_request(RADARR_URL, RADARR_API_KEY, 'movie/lookup', {'term': query}) or []
+    result = make_api_request(RADARR_URL, RADARR_API_KEY, 'movie/lookup', {'term': query})
+    return result if isinstance(result, list) else []
+
 
 def add_movie_to_radarr(movie_info: dict) -> bool | str:
     """Adds a movie to Radarr."""
     if not RADARR_URL or not RADARR_API_KEY:
-        # Cannot get traceback here easily as no exception is caught
-        logger.error("Radarr URL or API Key not configured in environment variables.")
+        logger.error("Radarr URL or API Key not configured.")
         return False
+
     payload = {
-        "title": movie_info['title'],
-        "tmdbId": movie_info['tmdbId'],
-        "qualityProfileId": RADARR_QUALITY_PROFILE_ID, # Use loaded env var
-        "rootFolderPath": f"/data/movies", # Default path, Radarr needs the ID mapping
+        "title": movie_info.get('title'),
+        "tmdbId": movie_info.get('tmdbId'),
+        "qualityProfileId": RADARR_QUALITY_PROFILE_ID,
+        "rootFolderPath": "/data/movies",
         "monitored": True,
         "addOptions": {
             "searchForMovie": True
         }
     }
-    # Get the correct root folder path using the ID from env var
+
+    # Get the correct root folder path using the configured ID
     root_folders = make_api_request(RADARR_URL, RADARR_API_KEY, 'rootfolder')
-    if root_folders:
-        target_folder = next((rf['path'] for rf in root_folders if rf['id'] == RADARR_ROOT_FOLDER_ID), None) # Use loaded env var
+    if isinstance(root_folders, list) and root_folders:
+        target_folder = next((rf['path'] for rf in root_folders if rf.get('id') == RADARR_ROOT_FOLDER_ID), None)
         if target_folder:
             payload['rootFolderPath'] = target_folder
         else:
-            # Cannot get traceback here easily as no exception is caught
-            logger.error(f"Radarr Root Folder ID {RADARR_ROOT_FOLDER_ID} not found in Radarr's API response.") # Use loaded env var
+            logger.error(f"Radarr Root Folder ID {RADARR_ROOT_FOLDER_ID} not found in Radarr API response.")
             return False
     else:
-        # Cannot get traceback here easily as no exception is caught
         logger.error("Could not retrieve Radarr root folders via API.")
         return False
 
-    # Correcting the add request to be a POST with JSON payload
-    headers = {'X-Api-Key': RADARR_API_KEY, 'Content-Type': 'application/json'} # Use loaded env var
-    url = f"{RADARR_URL}/api/v3/movie" # Use loaded env var
-    response = None # Initialize response to None
+    headers = {'X-Api-Key': RADARR_API_KEY, 'Content-Type': 'application/json'}
+    url = f"{RADARR_URL}/api/v3/movie"
+    response = None
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        response = http_session.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
-        logger.info(f"Movie '{movie_info['title']}' added successfully to Radarr.")
+        logger.info(f"Movie '{movie_info.get('title')}' added successfully to Radarr.")
         return True
     except requests.exceptions.RequestException as e:
-        log_message = f"Failed to add movie '{movie_info['title']}' to Radarr."
+        log_message = f"Failed to add movie '{movie_info.get('title')}' to Radarr."
         error_code = 'unknown_error'
         if response is not None:
             log_message += f" Radarr response: {response.text}"
             try:
                 error_response = response.json()
                 if isinstance(error_response, list) and error_response:
-                    # Assuming the first error object contains the errorCode
                     first_error = error_response[0]
-                    if 'errorCode' in first_error:
+                    if isinstance(first_error, dict) and 'errorCode' in first_error:
                         error_code = first_error['errorCode']
             except json.JSONDecodeError:
                 logger.warning("Failed to decode Radarr error response JSON.")
@@ -79,4 +77,4 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
                 logger.warning(f"Unexpected error parsing Radarr error response: {json_e}")
 
         logger.exception(log_message)
-        return error_code # Return the error code or 'unknown_error'
+        return error_code
