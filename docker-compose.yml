@@ -19,7 +19,13 @@ services:
       # Your Radarr API Key (Find in Radarr -> Settings -> General)
       - RADARR_API_KEY=YOUR_RADARR_API_KEY_HERE
 
+      # Your qBittorrent Web UI URL (e.g., http://qbittorrent.host.or.ip:8080)
+      - QBITTORRENT_URL=YOUR_QBITTORRENT_URL_HERE
+
       # --- Optional Environment Variables (Defaults are usually 1 if not set) ---
+      # Optional: Spotify playlist downloader API service URL (e.g., http://192.168.1.137:9030)
+      # If not set, the Spotify playlist option will be hidden from the bot menu.
+      # - SPOTIFY_API_URL=http://your-spotify-service:9030
       # Sonarr Root Folder ID (Find in Sonarr -> Settings -> Media Management -> Root Folders)
       - SONARR_ROOT_FOLDER_ID=1
       # Sonarr Quality Profile ID (Find in Sonarr -> Settings -> Profiles)

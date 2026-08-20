@@ -5,7 +5,7 @@ import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
-from config import DEFAULT_TIMEOUT
+from config import DEFAULT_TIMEOUT, SPOTIFY_API_URL
 from utils import restricted, http_session
 from sonarr_client import search_sonarr, add_series_to_sonarr
 from radarr_client import search_radarr, add_movie_to_radarr
@@ -24,12 +24,13 @@ def _clear_user_data(context: CallbackContext) -> None:
 
 
 def _build_main_menu_keyboard() -> InlineKeyboardMarkup:
-    """Builds the standard selection keyboard."""
+    """Builds the selection keyboard, dynamically including Spotify only if SPOTIFY_API_URL is configured."""
     keyboard = [
         [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
         [InlineKeyboardButton("📺 Series", callback_data='series')],
-        [InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')],
     ]
+    if SPOTIFY_API_URL:
+        keyboard.append([InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -92,9 +93,10 @@ async def start(update: Update, context: CallbackContext) -> int:
 async def help_command(update: Update, context: CallbackContext) -> None:
     """Displays help information."""
     if update.message:
+        media_types = "Movies, Series, or Spotify" if SPOTIFY_API_URL else "Movies or Series"
         await update.message.reply_text(
             "🤖 <b>Bot Commands:</b>\n\n"
-            "• /start - Start a new search for Movies, Series, or Spotify\n"
+            f"• /start - Start a new search for {media_types}\n"
             "• /downloads - Check active qBittorrent downloads\n"
             "• /help - Show this help message\n"
             "• /cancel - Cancel the current action",
@@ -124,7 +126,7 @@ async def downloads_command(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("Could not retrieve download status or no active downloads.", reply_markup=reply_markup)
         return
 
-    # Split message safely by lines if length exceeds Telegram limits (4096 chars)
+    # Split message safely by lines if length exceeds Telegram limits (4000 chars)
     max_len = 4000
     if len(message) <= max_len:
         try:
@@ -178,6 +180,9 @@ async def search_type_chosen(update: Update, context: CallbackContext) -> int:
     context.user_data['search_type'] = search_type
 
     if search_type == 'spotify':
+        if not SPOTIFY_API_URL:
+            await query.edit_message_text("⚠️ Spotify integration is not configured on this server.")
+            return await _restart_conversation(update, context)
         await query.edit_message_text("🎵 Please enter the Spotify Playlist URL:")
     else:
         await query.edit_message_text(f"🔍 Searching for a <b>{html.escape(str(search_type))}</b>. Please enter the title:", parse_mode='HTML')
@@ -207,9 +212,13 @@ async def _render_search_results(update: Update, context: CallbackContext, resul
 
 def _sync_spotify_playlist(query_text: str) -> tuple[dict | None, str | None]:
     """Helper to communicate with Spotify service synchronously in worker thread."""
+    if not SPOTIFY_API_URL:
+        return None, "Spotify service URL (SPOTIFY_API_URL) is not configured."
+
+    api_endpoint = f"{SPOTIFY_API_URL.rstrip('/')}/api/saved-items"
     try:
         payload1 = {"search": query_text}
-        res1 = http_session.post("http://192.168.1.137:9030/api/saved-items", json=payload1, timeout=DEFAULT_TIMEOUT)
+        res1 = http_session.post(api_endpoint, json=payload1, timeout=DEFAULT_TIMEOUT)
         res1.raise_for_status()
         data = res1.json()
 
@@ -228,10 +237,16 @@ def _sync_spotify_playlist(query_text: str) -> tuple[dict | None, str | None]:
             return None, "Playlist ID not found in the response."
 
         payload2 = {"ids": [playlist_id], "sync": True, "sync_interval": "10", "label": ""}
-        res2 = http_session.put("http://192.168.1.137:9030/api/saved-items", json=payload2, timeout=DEFAULT_TIMEOUT)
+        res2 = http_session.put(api_endpoint, json=payload2, timeout=DEFAULT_TIMEOUT)
         res2.raise_for_status()
 
         return playlist, None
+    except requests.exceptions.ConnectionError:
+        logger.exception(f"Connection refused to Spotify service at {SPOTIFY_API_URL}")
+        return None, f"Could not connect to Spotify service at {SPOTIFY_API_URL}. Check that the service is running and reachable."
+    except requests.exceptions.Timeout:
+        logger.exception(f"Timeout connecting to Spotify service at {SPOTIFY_API_URL}")
+        return None, f"Timeout connecting to Spotify service at {SPOTIFY_API_URL}."
     except requests.RequestException as e:
         logger.exception("Network error while adding Spotify playlist")
         return None, f"Network error: {e}"

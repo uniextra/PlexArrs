@@ -29,6 +29,9 @@ QBITTORRENT_URL: str | None = os.environ.get('QBITTORRENT_URL')
 QBITTORRENT_USERNAME: str | None = os.environ.get('QBITTORRENT_USERNAME')
 QBITTORRENT_PASSWORD: str | None = os.environ.get('QBITTORRENT_PASSWORD')
 
+# Spotify (Optional)
+SPOTIFY_API_URL: str | None = os.environ.get('SPOTIFY_API_URL')
+
 # Allowed Telegram User IDs
 _allowed_users_raw: str | None = os.environ.get('ALLOWED_USER_IDS')
 ALLOWED_USER_IDS: list[int] | None = (
@@ -56,3 +59,7 @@ def validate_config() -> None:
     logger.info(
         f"Configuration loaded successfully. Allowed users: {ALLOWED_USER_IDS if ALLOWED_USER_IDS else 'All allowed'}"
     )
+    if SPOTIFY_API_URL:
+        logger.info(f"Spotify integration enabled with URL: {SPOTIFY_API_URL}")
+    else:
+        logger.info("Spotify integration disabled (SPOTIFY_API_URL not set).")

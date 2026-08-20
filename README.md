@@ -28,6 +28,7 @@ This bot is configured entirely through environment variables when deployed via 
 
 **Optional Environment Variables:**
 
+*   `SPOTIFY_API_URL`: Full URL to your Spotify downloader API service (e.g., `http://192.168.1.100:9030`). If not set or left empty, the Spotify playlist option will be automatically hidden from the bot menu.
 *   `SONARR_ROOT_FOLDER_ID`: The ID of the root folder in Sonarr where new series should be added. (Default: `1`)
 *   `SONARR_QUALITY_PROFILE_ID`: The ID of the quality profile to use when adding series in Sonarr. (Default: `1`)
 *   `RADARR_ROOT_FOLDER_ID`: The ID of the root folder in Radarr where new movies should be added. (Default: `1`)
@@ -41,6 +42,7 @@ This bot is configured entirely through environment variables when deployed via 
 *   Search for Movies (via Radarr)
 *   Search for TV Series (via Sonarr)
 *   Add selected Movies/Series to Radarr/Sonarr
+*   Add Spotify Playlists (via Spotify API service, optional)
 *   View current download status from qBittorrent (`/downloads` command)
 
 **Finding Sonarr/Radarr IDs:**
