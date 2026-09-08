@@ -203,10 +203,15 @@ async def _render_search_results(update: Update, context: CallbackContext, resul
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     message_text = "Here's what I found:"
-    if update.callback_query:
-        await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup)
-    elif update.message:
-        await update.message.reply_text(message_text, reply_markup=reply_markup)
+    if update.callback_query and update.callback_query.message:
+        try:
+            await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup)
+            return CHOOSE_ITEM
+        except Exception:
+            pass
+
+    if update.effective_chat:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=message_text, reply_markup=reply_markup)
     return CHOOSE_ITEM
 
 
@@ -320,6 +325,8 @@ async def search_query_received(update: Update, context: CallbackContext) -> int
         results = await asyncio.to_thread(search_sonarr, query_text)
 
     if results is None:
+        service_name = "Radarr" if search_type == 'movie' else "Sonarr"
+        await update.message.reply_text(f"❌ Could not reach {service_name}. Please check that the service is running and configured properly.")
         return await _restart_conversation(update, context)
     if not results:
         await update.message.reply_text("Sorry, I couldn't find anything matching that title.")
@@ -376,10 +383,18 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
         title_str = html.escape(str(title) if title is not None else 'N/A')
         overview_str = html.escape(str(overview) if overview is not None else 'No description available.')
 
+        # Support both Sonarr (flat) and Radarr (nested by provider) ratings format
         rating_value = None
         ratings_data = chosen_item.get('ratings')
-        if isinstance(ratings_data, dict) and ratings_data.get('value') is not None:
-            rating_value = ratings_data['value']
+        if isinstance(ratings_data, dict):
+            if ratings_data.get('value') is not None:
+                rating_value = ratings_data['value']
+            elif 'imdb' in ratings_data and isinstance(ratings_data['imdb'], dict):
+                rating_value = ratings_data['imdb'].get('value')
+            elif 'tmdb' in ratings_data and isinstance(ratings_data['tmdb'], dict):
+                rating_value = ratings_data['tmdb'].get('value')
+            elif 'rottenTomatoes' in ratings_data and isinstance(ratings_data['rottenTomatoes'], dict):
+                rating_value = ratings_data['rottenTomatoes'].get('value')
 
         message_text = f"<b>{title_str} ({year})</b>\n\n{overview_str}"
         if rating_value is not None:

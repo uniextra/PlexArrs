@@ -50,7 +50,7 @@ if __name__ == '__main__':
             SEARCH_TYPE: [CallbackQueryHandler(search_type_chosen)],
             SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_query_received)],
             CHOOSE_ITEM: [CallbackQueryHandler(item_chosen, pattern='^choose_\\d+$|^cancel$|^backtosearch$')],
-            CONFIRM_ADD: [CallbackQueryHandler(add_item_confirmed, pattern='^confirm_add$|^cancel_add$|^back_to_results$')],
+            CONFIRM_ADD: [CallbackQueryHandler(add_item_confirmed, pattern='^confirm_add$|^cancel_add$|^cancel_search_completely$|^back_to_results$')],
         },
         fallbacks=[
             CommandHandler('cancel', cancel_conversation),

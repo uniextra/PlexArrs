@@ -13,13 +13,15 @@ from utils import make_api_request, http_session
 logger = logging.getLogger(__name__)
 
 
-def search_radarr(query: str) -> list:
+def search_radarr(query: str) -> list | None:
     """Searches Radarr for a movie."""
     if not RADARR_URL or not RADARR_API_KEY:
         logger.error("Radarr URL or API Key not configured.")
-        return []
+        return None
     result = make_api_request(RADARR_URL, RADARR_API_KEY, 'movie/lookup', {'term': query})
-    return result if isinstance(result, list) else []
+    if result is None or not isinstance(result, list):
+        return None
+    return result
 
 
 def add_movie_to_radarr(movie_info: dict) -> bool | str:
@@ -52,8 +54,9 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
         logger.error("Could not retrieve Radarr root folders via API.")
         return False
 
-    headers = {'X-Api-Key': RADARR_API_KEY, 'Content-Type': 'application/json'}
-    url = f"{RADARR_URL}/api/v3/movie"
+    headers = {'X-Api-Key': RADARR_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json'}
+    clean_base = RADARR_URL.rstrip('/')
+    url = f"{clean_base}/api/v3/movie"
     response = None
     try:
         response = http_session.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
