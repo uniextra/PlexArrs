@@ -13,13 +13,15 @@ from utils import make_api_request, http_session
 logger = logging.getLogger(__name__)
 
 
-def search_sonarr(query: str) -> list:
+def search_sonarr(query: str) -> list | None:
     """Searches Sonarr for a series."""
     if not SONARR_URL or not SONARR_API_KEY:
         logger.error("Sonarr URL or API Key not configured.")
-        return []
+        return None
     result = make_api_request(SONARR_URL, SONARR_API_KEY, 'series/lookup', {'term': query})
-    return result if isinstance(result, list) else []
+    if result is None or not isinstance(result, list):
+        return None
+    return result
 
 
 def add_series_to_sonarr(series_info: dict) -> bool | str:
@@ -54,8 +56,9 @@ def add_series_to_sonarr(series_info: dict) -> bool | str:
         logger.error("Could not retrieve Sonarr root folders via API.")
         return False
 
-    headers = {'X-Api-Key': SONARR_API_KEY, 'Content-Type': 'application/json'}
-    url = f"{SONARR_URL}/api/v3/series"
+    headers = {'X-Api-Key': SONARR_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json'}
+    clean_base = SONARR_URL.rstrip('/')
+    url = f"{clean_base}/api/v3/series"
     response = None
     try:
         response = http_session.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)

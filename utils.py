@@ -38,8 +38,10 @@ def restricted(func):
 
 def make_api_request(base_url: str, api_key: str, endpoint: str, params: dict | None = None) -> list | dict | None:
     """Makes a generic API GET request using the shared session."""
-    headers = {'X-Api-Key': api_key}
-    url = f"{base_url}/api/v3/{endpoint}"
+    headers = {'X-Api-Key': api_key, 'Accept': 'application/json'}
+    clean_base = base_url.rstrip('/')
+    clean_endpoint = endpoint.lstrip('/')
+    url = f"{clean_base}/api/v3/{clean_endpoint}"
     logger.info(f"Attempting API request to: {url} with params: {params}")
     try:
         response = http_session.get(url, headers=headers, params=params, timeout=DEFAULT_TIMEOUT)
