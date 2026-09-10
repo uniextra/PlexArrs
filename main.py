@@ -22,6 +22,7 @@ from telegram_handlers import (
     cancel_conversation,
     cancel_conversation_and_restart,
     _restart_conversation,
+    unmonitor_callback,
     global_error_handler,
     SEARCH_TYPE,
     SEARCH_QUERY,
@@ -68,6 +69,7 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("downloads", downloads_command))
     application.add_handler(CommandHandler("cancel", cancel_conversation))
     application.add_handler(CallbackQueryHandler(_restart_conversation, pattern='^back_to_start$'))
+    application.add_handler(CallbackQueryHandler(unmonitor_callback, pattern=r'^(?i)(unmonitor|unfollow|dejar_seguir|stop_monitor).*'))
 
     # Global Error Handler
     application.add_error_handler(global_error_handler)

@@ -83,3 +83,27 @@ def add_series_to_sonarr(series_info: dict) -> bool | str:
 
         logger.exception(log_message)
         return error_code
+
+
+def unmonitor_series(series_id: int) -> bool:
+    """Unmonitors a series in Sonarr."""
+    if not SONARR_URL or not SONARR_API_KEY:
+        logger.error("Sonarr URL or API Key not configured.")
+        return False
+
+    headers = {'X-Api-Key': SONARR_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json'}
+    clean_base = SONARR_URL.rstrip('/')
+    url = f"{clean_base}/api/v3/series/editor"
+    payload = {
+        "seriesIds": [int(series_id)],
+        "monitored": False
+    }
+    try:
+        response = http_session.put(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+        response.raise_for_status()
+        logger.info(f"Series ID {series_id} successfully unmonitored in Sonarr.")
+        return True
+    except Exception:
+        logger.exception(f"Failed to unmonitor series ID {series_id} in Sonarr.")
+        return False
+

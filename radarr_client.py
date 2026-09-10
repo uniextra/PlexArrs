@@ -81,3 +81,27 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
 
         logger.exception(log_message)
         return error_code
+
+
+def unmonitor_movie(movie_id: int) -> bool:
+    """Unmonitors a movie in Radarr."""
+    if not RADARR_URL or not RADARR_API_KEY:
+        logger.error("Radarr URL or API Key not configured.")
+        return False
+
+    headers = {'X-Api-Key': RADARR_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json'}
+    clean_base = RADARR_URL.rstrip('/')
+    url = f"{clean_base}/api/v3/movie/editor"
+    payload = {
+        "movieIds": [int(movie_id)],
+        "monitored": False
+    }
+    try:
+        response = http_session.put(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+        response.raise_for_status()
+        logger.info(f"Movie ID {movie_id} successfully unmonitored in Radarr.")
+        return True
+    except Exception:
+        logger.exception(f"Failed to unmonitor movie ID {movie_id} in Radarr.")
+        return False
+
