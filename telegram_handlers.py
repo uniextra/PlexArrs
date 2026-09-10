@@ -1,14 +1,15 @@
 import logging
 import html
 import asyncio
+import re
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
 from config import DEFAULT_TIMEOUT, SPOTIFY_API_URL
 from utils import restricted, http_session
-from sonarr_client import search_sonarr, add_series_to_sonarr
-from radarr_client import search_radarr, add_movie_to_radarr
+from sonarr_client import search_sonarr, add_series_to_sonarr, unmonitor_series
+from radarr_client import search_radarr, add_movie_to_radarr, unmonitor_movie
 from qb_client import get_qbittorrent_downloads
 
 logger = logging.getLogger(__name__)
@@ -542,6 +543,67 @@ async def cancel_conversation(update: Update, context: CallbackContext) -> int:
 async def cancel_conversation_and_restart(update: Update, context: CallbackContext) -> int:
     """Handles inline cancel buttons."""
     return await _restart_conversation(update, context)
+
+
+@restricted
+async def unmonitor_callback(update: Update, context: CallbackContext) -> None:
+    """Handles 'unmonitor' / 'dejar de seguir' callback buttons from notifications or messages."""
+    query = update.callback_query
+    if not query:
+        return
+
+    callback_data = query.data or ""
+    logger.info(f"Received unmonitor callback query: {callback_data}")
+
+    # Regex matches formats like:
+    # unmonitor_series_123, unmonitor:movie:456, unmonitor_123, dejar_seguir_series_123, unfollow_movie_123, etc.
+    match = re.match(
+        r'^(?:unmonitor|unfollow|dejar_seguir|stop_monitor)[_:](?:(series|movie|sonarr|radarr)[_:])?(\d+)$',
+        callback_data,
+        re.IGNORECASE
+    )
+    if not match:
+        logger.warning(f"Unrecognized unmonitor callback format: {callback_data}")
+        await query.answer("⚠️ Formato de solicitud no reconocido.", show_alert=True)
+        return
+
+    media_type = match.group(1).lower() if match.group(1) else None
+    item_id = int(match.group(2))
+
+    await query.answer("⏳ Desactivando seguimiento...")
+
+    success = False
+    service_name = ""
+
+    if media_type in ('series', 'sonarr'):
+        service_name = "Sonarr (Serie)"
+        success = await asyncio.to_thread(unmonitor_series, item_id)
+    elif media_type in ('movie', 'radarr'):
+        service_name = "Radarr (Película)"
+        success = await asyncio.to_thread(unmonitor_movie, item_id)
+    else:
+        # If type not explicitly specified, try Radarr first then Sonarr
+        success = await asyncio.to_thread(unmonitor_movie, item_id)
+        service_name = "Radarr"
+        if not success:
+            success = await asyncio.to_thread(unmonitor_series, item_id)
+            service_name = "Sonarr"
+
+    if success:
+        logger.info(f"Successfully unmonitored {service_name} ID {item_id}")
+        await query.answer("✅ Has dejado de seguir este contenido.", show_alert=True)
+        try:
+            current_text = query.message.text or query.message.caption or ""
+            updated_text = f"{current_text}\n\n🛑 <b>Dejado de seguir (Unmonitored)</b>"
+            if query.message.caption:
+                await query.edit_message_caption(caption=updated_text, parse_mode='HTML', reply_markup=None)
+            elif query.message.text:
+                await query.edit_message_text(text=updated_text, parse_mode='HTML', reply_markup=None)
+        except Exception as e:
+            logger.debug(f"Could not edit notification message markup/text: {e}")
+    else:
+        logger.error(f"Failed to unmonitor {service_name} ID {item_id}")
+        await query.answer("❌ Error: No se pudo dejar de seguir el artículo en el servidor.", show_alert=True)
 
 
 async def global_error_handler(update: object, context: CallbackContext) -> None:
