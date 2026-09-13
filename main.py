@@ -69,7 +69,7 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("downloads", downloads_command))
     application.add_handler(CommandHandler("cancel", cancel_conversation))
     application.add_handler(CallbackQueryHandler(_restart_conversation, pattern='^back_to_start$'))
-    application.add_handler(CallbackQueryHandler(unmonitor_callback, pattern=r'^(?i)(unmonitor|unfollow|dejar_seguir|stop_monitor).*'))
+    application.add_handler(CallbackQueryHandler(unmonitor_callback, pattern=r'(?i)^(unmonitor|unfollow|dejar_seguir|stop_monitor).*'))
 
     # Global Error Handler
     application.add_error_handler(global_error_handler)
