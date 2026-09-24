@@ -8,8 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Set working directory
 WORKDIR /app
 
-# Create a non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Create a non-root user with explicit UID/GID 1000
+RUN addgroup -g 1000 -S appgroup && adduser -u 1000 -S appuser -G appgroup
 
 # Install dependencies
 COPY requirements.txt .
