@@ -43,15 +43,20 @@ def add_series_to_sonarr(series_info: dict) -> bool | str:
         }
     }
 
-    # Get the correct root folder path using the configured ID
+    # Get the correct root folder path using the configured ID or fallback to the first available
     root_folders = make_api_request(SONARR_URL, SONARR_API_KEY, 'rootfolder')
     if isinstance(root_folders, list) and root_folders:
         target_folder = next((rf['path'] for rf in root_folders if rf.get('id') == SONARR_ROOT_FOLDER_ID), None)
         if target_folder:
             payload['rootFolderPath'] = target_folder
         else:
-            logger.error(f"Sonarr Root Folder ID {SONARR_ROOT_FOLDER_ID} not found in Sonarr API response.")
-            return False
+            fallback = root_folders[0].get('path')
+            available = [f"ID {rf.get('id')}: {rf.get('path')}" for rf in root_folders]
+            logger.warning(
+                f"Configured Sonarr Root Folder ID {SONARR_ROOT_FOLDER_ID} not found. "
+                f"Available root folders: {available}. Falling back to: {fallback}"
+            )
+            payload['rootFolderPath'] = fallback
     else:
         logger.error("Could not retrieve Sonarr root folders via API.")
         return False
