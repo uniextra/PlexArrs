@@ -41,15 +41,20 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
         }
     }
 
-    # Get the correct root folder path using the configured ID
+    # Get the correct root folder path using the configured ID or fallback to the first available
     root_folders = make_api_request(RADARR_URL, RADARR_API_KEY, 'rootfolder')
     if isinstance(root_folders, list) and root_folders:
         target_folder = next((rf['path'] for rf in root_folders if rf.get('id') == RADARR_ROOT_FOLDER_ID), None)
         if target_folder:
             payload['rootFolderPath'] = target_folder
         else:
-            logger.error(f"Radarr Root Folder ID {RADARR_ROOT_FOLDER_ID} not found in Radarr API response.")
-            return False
+            fallback = root_folders[0].get('path')
+            available = [f"ID {rf.get('id')}: {rf.get('path')}" for rf in root_folders]
+            logger.warning(
+                f"Configured Radarr Root Folder ID {RADARR_ROOT_FOLDER_ID} not found. "
+                f"Available root folders: {available}. Falling back to: {fallback}"
+            )
+            payload['rootFolderPath'] = fallback
     else:
         logger.error("Could not retrieve Radarr root folders via API.")
         return False
