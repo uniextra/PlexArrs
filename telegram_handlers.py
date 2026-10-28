@@ -2,12 +2,10 @@ import logging
 import html
 import asyncio
 import re
-import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
-from config import DEFAULT_TIMEOUT, SPOTIFY_API_URL
-from utils import restricted, http_session
+from utils import restricted
 from sonarr_client import search_sonarr, add_series_to_sonarr, unmonitor_series
 from radarr_client import search_radarr, add_movie_to_radarr, unmonitor_movie
 from qb_client import get_qbittorrent_downloads
@@ -25,13 +23,11 @@ def _clear_user_data(context: CallbackContext) -> None:
 
 
 def _build_main_menu_keyboard() -> InlineKeyboardMarkup:
-    """Builds the selection keyboard, dynamically including Spotify only if SPOTIFY_API_URL is configured."""
+    """Builds the main selection keyboard."""
     keyboard = [
         [InlineKeyboardButton("🎬 Movie", callback_data='movie')],
         [InlineKeyboardButton("📺 Series", callback_data='series')],
     ]
-    if SPOTIFY_API_URL:
-        keyboard.append([InlineKeyboardButton("🎵 Spotify Playlist", callback_data='spotify')])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -94,10 +90,9 @@ async def start(update: Update, context: CallbackContext) -> int:
 async def help_command(update: Update, context: CallbackContext) -> None:
     """Displays help information."""
     if update.message:
-        media_types = "Movies, Series, or Spotify" if SPOTIFY_API_URL else "Movies or Series"
         await update.message.reply_text(
             "🤖 <b>Bot Commands:</b>\n\n"
-            f"• /start - Start a new search for {media_types}\n"
+            "• /start - Start a new search for Movies or Series\n"
             "• /downloads - Check active qBittorrent downloads\n"
             "• /help - Show this help message\n"
             "• /cancel - Cancel the current action",
@@ -179,14 +174,7 @@ async def search_type_chosen(update: Update, context: CallbackContext) -> int:
         return await _restart_conversation(update, context)
 
     context.user_data['search_type'] = search_type
-
-    if search_type == 'spotify':
-        if not SPOTIFY_API_URL:
-            await query.edit_message_text("⚠️ Spotify integration is not configured on this server.")
-            return await _restart_conversation(update, context)
-        await query.edit_message_text("🎵 Please enter the Spotify Playlist URL:")
-    else:
-        await query.edit_message_text(f"🔍 Searching for a <b>{html.escape(str(search_type))}</b>. Please enter the title:", parse_mode='HTML')
+    await query.edit_message_text(f"🔍 Searching for a <b>{html.escape(str(search_type))}</b>. Please enter the title:", parse_mode='HTML')
     return SEARCH_QUERY
 
 
@@ -216,51 +204,6 @@ async def _render_search_results(update: Update, context: CallbackContext, resul
     return CHOOSE_ITEM
 
 
-def _sync_spotify_playlist(query_text: str) -> tuple[dict | None, str | None]:
-    """Helper to communicate with Spotify service synchronously in worker thread."""
-    if not SPOTIFY_API_URL:
-        return None, "Spotify service URL (SPOTIFY_API_URL) is not configured."
-
-    api_endpoint = f"{SPOTIFY_API_URL.rstrip('/')}/api/saved-items"
-    try:
-        payload1 = {"search": query_text}
-        res1 = http_session.post(api_endpoint, json=payload1, timeout=DEFAULT_TIMEOUT)
-        res1.raise_for_status()
-        data = res1.json()
-
-        playlist = None
-        if isinstance(data, list):
-            for item in data:
-                if isinstance(item, dict) and item.get("type") == "spotify-playlist":
-                    playlist = item
-                    break
-
-        if not playlist:
-            return None, "Could not find a valid Spotify playlist from that URL."
-
-        playlist_id = playlist.get("id")
-        if not playlist_id:
-            return None, "Playlist ID not found in the response."
-
-        payload2 = {"ids": [playlist_id], "sync": True, "sync_interval": "10", "label": ""}
-        res2 = http_session.put(api_endpoint, json=payload2, timeout=DEFAULT_TIMEOUT)
-        res2.raise_for_status()
-
-        return playlist, None
-    except requests.exceptions.ConnectionError:
-        logger.exception(f"Connection refused to Spotify service at {SPOTIFY_API_URL}")
-        return None, f"Could not connect to Spotify service at {SPOTIFY_API_URL}. Check that the service is running and reachable."
-    except requests.exceptions.Timeout:
-        logger.exception(f"Timeout connecting to Spotify service at {SPOTIFY_API_URL}")
-        return None, f"Timeout connecting to Spotify service at {SPOTIFY_API_URL}."
-    except requests.RequestException as e:
-        logger.exception("Network error while adding Spotify playlist")
-        return None, f"Network error: {e}"
-    except Exception as e:
-        logger.exception("Unexpected error while adding Spotify playlist")
-        return None, f"Unexpected error: {e}"
-
-
 @restricted
 async def search_query_received(update: Update, context: CallbackContext) -> int:
     """Performs search in worker thread and renders results."""
@@ -269,53 +212,6 @@ async def search_query_received(update: Update, context: CallbackContext) -> int
 
     query_text = update.message.text.strip()
     search_type = context.user_data.get('search_type')
-
-    if search_type == 'spotify':
-        await update.message.reply_text("⏳ Processing Spotify playlist...")
-        playlist, error = await asyncio.to_thread(_sync_spotify_playlist, query_text)
-
-        if error or not playlist:
-            await update.message.reply_text(f"❌ {error or 'Failed to add Spotify playlist.'}")
-            return await _restart_conversation(update, context)
-
-        title = playlist.get("title", "Unknown Playlist")
-        image_url = playlist.get("image")
-        title_str = html.escape(str(title))
-        message_text = f"✅ Successfully added Spotify Playlist:\n<b>{title_str}</b>"
-        reply_markup = _build_main_menu_keyboard()
-
-        if image_url:
-            try:
-                await context.bot.send_photo(
-                    chat_id=update.effective_chat.id,
-                    photo=image_url,
-                    caption=message_text,
-                    parse_mode='HTML'
-                )
-            except Exception:
-                logger.exception(f"Failed to send photo {image_url}. Sending text instead.")
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=message_text,
-                    parse_mode='HTML'
-                )
-        else:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=message_text,
-                parse_mode='HTML'
-            )
-
-        context.user_data.pop('search_type', None)
-        user = update.effective_user
-        user_name = user.mention_html() if user else "there"
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"Hi {user_name}! What would you like to search for next?",
-            reply_markup=reply_markup,
-            parse_mode='HTML'
-        )
-        return ConversationHandler.END
 
     await update.message.reply_text(f"⏳ Searching for {search_type}: <i>{html.escape(query_text)}</i>...", parse_mode='HTML')
 

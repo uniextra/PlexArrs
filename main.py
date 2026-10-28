@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
     # Conversation handler for the search/add process
     conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(search_type_chosen, pattern='^movie$|^series$|^spotify$')],
+        entry_points=[CallbackQueryHandler(search_type_chosen, pattern='^movie$|^series$')],
         states={
             SEARCH_TYPE: [CallbackQueryHandler(search_type_chosen)],
             SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_query_received)],
