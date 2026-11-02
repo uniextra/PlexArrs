@@ -32,7 +32,7 @@ This bot is configured entirely through environment variables when deployed via 
 *   `SONARR_QUALITY_PROFILE_ID`: The ID of the quality profile to use when adding series in Sonarr. (Default: `1`)
 *   `RADARR_ROOT_FOLDER_ID`: The ID of the root folder in Radarr where new movies should be added. (Default: `1`)
 *   `RADARR_QUALITY_PROFILE_ID`: The ID of the quality profile to use when adding movies in Radarr. (Default: `1`)
-*   `ALLOWED_USER_IDS`: A comma-separated list of Telegram user IDs that are allowed to interact with the bot (e.g., `123456789,987654321`). If left empty or unset, all users will be allowed.
+*   `ALLOWED_USER_IDS`: A comma-separated list of Telegram user IDs that are allowed to interact with the bot (e.g., `123456789,987654321`). For security (Fail-Closed), only users specified here will have access.
 *   `QBITTORRENT_USERNAME`: Your qBittorrent Web UI username (only required if authentication is enabled).
 *   `QBITTORRENT_PASSWORD`: Your qBittorrent Web UI password (only required if authentication is enabled).
 

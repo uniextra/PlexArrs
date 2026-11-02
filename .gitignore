@@ -2,8 +2,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 guia.txt
-.dockerignore
 docker-compose RAFA.yml
-.env
+.env*
+*.env
+*.local
 .agent/
 .github/config.py

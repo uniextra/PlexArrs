@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   telegram-bot:
     image: uniextra/plexarrs:latest
@@ -7,6 +5,8 @@ services:
     container_name: telegram_sonarr_radarr_bot
     user: "1000:1000"
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       # --- Required Environment Variables ---
       # Obtain your bot token from BotFather on Telegram
@@ -22,8 +22,11 @@ services:
 
       # Your qBittorrent Web UI URL (e.g., http://qbittorrent.host.or.ip:8080)
       - QBITTORRENT_URL=YOUR_QBITTORRENT_URL_HERE
+      # Optional qBittorrent credentials (leave commented if WebUI authentication is disabled or whitelisted)
+      # - QBITTORRENT_USERNAME=admin
+      # - QBITTORRENT_PASSWORD=your_password
 
-      # --- Optional Environment Variables (Defaults are usually 1 if not set) ---
+      # --- Optional Environment Variables (Defaults are 1 if not set) ---
       # Sonarr Root Folder ID (Find in Sonarr -> Settings -> Media Management -> Root Folders)
       - SONARR_ROOT_FOLDER_ID=1
       # Sonarr Quality Profile ID (Find in Sonarr -> Settings -> Profiles)
@@ -32,9 +35,11 @@ services:
       - RADARR_ROOT_FOLDER_ID=1
       # Radarr Quality Profile ID (Find in Radarr -> Settings -> Profiles)
       - RADARR_QUALITY_PROFILE_ID=1
+
       # Comma-separated list of Telegram User IDs allowed to use the bot (e.g., 123456789,987654321)
-      # Leave empty to allow all users.
-      - ALLOWED_USER_IDS=YOUR_ALLOWED_TELEGRAM_IDS_HERE # e.g., 123456789 or 123,456
+      # Fail-Closed policy: only users in this list can interact with the bot.
+      # Replace with your Telegram user ID (get it from @userinfobot or @raw_data_bot on Telegram)
+      - ALLOWED_USER_IDS=YOUR_TELEGRAM_USER_ID_HERE
 
     # Optional: Uncomment and adjust if your bot needs access to specific networks
     # networks:
@@ -43,5 +48,4 @@ services:
 # Optional: Define networks if needed
 # networks:
 #   your_network_name:
-#     external: true # Or define it here
-
+#     external: true

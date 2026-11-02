@@ -18,8 +18,18 @@ SEARCH_TYPE, SEARCH_QUERY, CHOOSE_ITEM, CONFIRM_ADD = range(4)
 
 def _clear_user_data(context: CallbackContext) -> None:
     """Safely cleans up all conversation-related keys from context.user_data."""
-    for key in ['search_type', 'search_results', 'chosen_item', '_state_name']:
-        context.user_data.pop(key, None)
+    if context.user_data is not None:
+        for key in ['search_type', 'search_results', 'chosen_item', '_state_name']:
+            context.user_data.pop(key, None)
+
+
+async def _safe_delete_message(query) -> None:
+    """Attempts to delete the query message safely without raising exceptions if already deleted."""
+    if query:
+        try:
+            await query.delete_message()
+        except Exception as e:
+            logger.debug(f"Could not delete message: {e}")
 
 
 def _build_main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -31,6 +41,7 @@ def _build_main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+@restricted
 async def _restart_conversation(update: Update, context: CallbackContext) -> int:
     """Cleans up user data and sends the initial prompt, restarting the conversation."""
     logger.info("Restarting conversation and returning to main selection.")
@@ -210,7 +221,7 @@ async def search_query_received(update: Update, context: CallbackContext) -> int
     if not update.message or not update.message.text:
         return ConversationHandler.END
 
-    query_text = update.message.text.strip()
+    query_text = update.message.text.strip()[:100]
     search_type = context.user_data.get('search_type')
 
     await update.message.reply_text(f"⏳ Searching for {search_type}: <i>{html.escape(query_text)}</i>...", parse_mode='HTML')
@@ -251,7 +262,7 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
     if callback_data == 'back_to_results':
         results = context.user_data.get('search_results')
         if results:
-            await query.delete_message()
+            await _safe_delete_message(query)
             return await _render_search_results(update, context, results)
         return await _restart_conversation(update, context)
 
@@ -269,7 +280,9 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
 
         title = chosen_item.get('title', 'N/A')
         year = chosen_item.get('year', '')
-        overview = chosen_item.get('overview', 'No description available.')
+        overview_raw = str(chosen_item.get('overview') or 'No description available.')
+        if len(overview_raw) > 750:
+            overview_raw = overview_raw[:747] + "..."
         poster_url = None
         images = chosen_item.get('images', [])
         if isinstance(images, list):
@@ -278,7 +291,7 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
                 poster_url = poster_info.get('remoteUrl') or poster_info.get('url')
 
         title_str = html.escape(str(title) if title is not None else 'N/A')
-        overview_str = html.escape(str(overview) if overview is not None else 'No description available.')
+        overview_str = html.escape(overview_raw)
 
         # Support both Sonarr (flat) and Radarr (nested by provider) ratings format
         rating_value = None
@@ -304,14 +317,18 @@ async def item_chosen(update: Update, context: CallbackContext) -> int:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await query.delete_message()
+        await _safe_delete_message(query)
+
+        caption_text = message_text
+        if len(caption_text) > 1000:
+            caption_text = caption_text[:997] + "..."
 
         if poster_url and update.effective_chat:
             try:
                 await context.bot.send_photo(
                     chat_id=update.effective_chat.id,
                     photo=poster_url,
-                    caption=message_text,
+                    caption=caption_text,
                     reply_markup=reply_markup,
                     parse_mode='HTML'
                 )
@@ -355,14 +372,14 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
     callback_data = query.data
 
     if callback_data == 'back_to_results':
-        await query.delete_message()
+        await _safe_delete_message(query)
         results = context.user_data.get('search_results')
         if results:
             return await _render_search_results(update, context, results)
         return await _restart_conversation(update, context)
 
     if callback_data == 'cancel_search_completely' or callback_data != 'confirm_add':
-        await query.delete_message()
+        await _safe_delete_message(query)
         return await _restart_conversation(update, context)
 
     chosen_item = context.user_data.get('chosen_item')
@@ -370,7 +387,7 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
 
     if not chosen_item or not search_type:
         logger.error("Missing context (chosen_item or search_type) in add_item_confirmed.")
-        await query.delete_message()
+        await _safe_delete_message(query)
         return await _restart_conversation(update, context)
 
     title = chosen_item.get('title', 'N/A')
@@ -466,8 +483,6 @@ async def unmonitor_callback(update: Update, context: CallbackContext) -> None:
     media_type = match.group(1).lower() if match.group(1) else None
     item_id = int(match.group(2))
 
-    await query.answer("⏳ Desactivando seguimiento...")
-
     success = False
     service_name = ""
 
@@ -505,6 +520,7 @@ async def unmonitor_callback(update: Update, context: CallbackContext) -> None:
 async def global_error_handler(update: object, context: CallbackContext) -> None:
     """Global error handler that logs exceptions and notifies users gracefully."""
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
+    _clear_user_data(context)
 
     if isinstance(update, Update) and update.effective_chat:
         try:

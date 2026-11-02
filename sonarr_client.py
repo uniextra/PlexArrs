@@ -8,7 +8,7 @@ from config import (
     SONARR_QUALITY_PROFILE_ID,
     DEFAULT_TIMEOUT,
 )
-from utils import make_api_request, http_session
+from utils import make_api_request, get_http_session
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +33,13 @@ def add_series_to_sonarr(series_info: dict) -> bool | str:
     payload = {
         "title": series_info.get('title'),
         "tvdbId": series_info.get('tvdbId'),
+        "titleSlug": series_info.get('titleSlug', ''),
         "qualityProfileId": SONARR_QUALITY_PROFILE_ID,
         "rootFolderPath": "/data/tv",
         "seasons": series_info.get('seasons', []),
         "monitored": True,
-        "monitor": "all",
         "addOptions": {
+            "monitor": "all",
             "searchForMissingEpisodes": True
         }
     }
@@ -65,8 +66,9 @@ def add_series_to_sonarr(series_info: dict) -> bool | str:
     clean_base = SONARR_URL.rstrip('/')
     url = f"{clean_base}/api/v3/series"
     response = None
+    session = get_http_session()
     try:
-        response = http_session.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+        response = session.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
         logger.info(f"Series '{series_info.get('title')}' added successfully to Sonarr.")
         return True
@@ -103,12 +105,16 @@ def unmonitor_series(series_id: int) -> bool:
         "seriesIds": [int(series_id)],
         "monitored": False
     }
+    session = get_http_session()
     try:
-        response = http_session.put(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+        response = session.put(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
+        data = response.json()
+        if isinstance(data, list) and len(data) == 0:
+            logger.info(f"Series ID {series_id} was not found in Sonarr (empty response list).")
+            return False
         logger.info(f"Series ID {series_id} successfully unmonitored in Sonarr.")
         return True
     except Exception:
         logger.exception(f"Failed to unmonitor series ID {series_id} in Sonarr.")
         return False
-

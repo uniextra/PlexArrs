@@ -15,14 +15,15 @@ RUN addgroup -g 1000 -S appgroup && adduser -u 1000 -S appuser -G appgroup
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt --upgrade
 
-# Copy application files
-COPY . .
-
-# Change ownership to non-root user
-RUN chown -R appuser:appgroup /app
+# Copy application files with proper non-root ownership in a single step
+COPY --chown=appuser:appgroup . .
 
 # Switch to non-root user
 USER appuser
+
+# Healthcheck to verify the python process can execute
+HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
+  CMD python -c "import sys; sys.exit(0)" || exit 1
 
 # Run application
 CMD ["python", "main.py"]

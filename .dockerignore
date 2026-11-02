@@ -11,9 +11,16 @@ guia.txt
 .gitignore
 docker-compose*.yml
 
-# Ignore Git files
-.git
-.agent
+# Ignore Git and GitHub internal files (prevent secrets leaks)
+.git/
+.github/
+.agent/
+
+# Environment files, documentation and local notes
+*.env*
+.env*
+*.txt
+*.md
 
 # Ignore virtual environment folders
 venv/

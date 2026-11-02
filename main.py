@@ -5,7 +5,6 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     filters,
-    CallbackContext,
     ConversationHandler,
     CallbackQueryHandler,
 )
@@ -37,28 +36,64 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Define base commands for Telegram UI menu
+base_commands = [
+    BotCommand("start", "Iniciar una nueva búsqueda"),
+    BotCommand("downloads", "Ver descargas actuales"),
+    BotCommand("help", "Mostrar ayuda"),
+    BotCommand("cancel", "Cancelar la operación actual"),
+]
+
+
+async def post_init(app: Application) -> None:
+    """Sets bot commands in Telegram after initialization."""
+    try:
+        await app.bot.set_my_commands(base_commands)
+        logger.info("Bot commands successfully set.")
+    except Exception as e:
+        logger.error(f"Failed to set bot commands: {e}", exc_info=True)
+
 
 if __name__ == '__main__':
     """Start the bot."""
     validate_config()
 
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .post_init(post_init)
+        .build()
+    )
+
+    # Global unmonitor handler registered first so it always takes precedence
+    application.add_handler(
+        CallbackQueryHandler(unmonitor_callback, pattern=r'(?i)^(unmonitor|unfollow|dejar_seguir|stop_monitor).*')
+    )
 
     # Conversation handler for the search/add process
     conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(search_type_chosen, pattern='^movie$|^series$')],
+        entry_points=[
+            CommandHandler('start', start),
+            CallbackQueryHandler(search_type_chosen, pattern='^movie$|^series$'),
+        ],
         states={
-            SEARCH_TYPE: [CallbackQueryHandler(search_type_chosen)],
+            SEARCH_TYPE: [CallbackQueryHandler(search_type_chosen, pattern='^movie$|^series$')],
             SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_query_received)],
-            CHOOSE_ITEM: [CallbackQueryHandler(item_chosen, pattern='^choose_\\d+$|^cancel$|^backtosearch$')],
-            CONFIRM_ADD: [CallbackQueryHandler(add_item_confirmed, pattern='^confirm_add$|^cancel_add$|^cancel_search_completely$|^back_to_results$')],
+            CHOOSE_ITEM: [CallbackQueryHandler(item_chosen, pattern='^choose_\\d+$|^cancel$')],
+            CONFIRM_ADD: [
+                CallbackQueryHandler(
+                    add_item_confirmed,
+                    pattern='^confirm_add$|^cancel_add$|^cancel_search_completely$|^back_to_results$',
+                )
+            ],
         },
         fallbacks=[
             CommandHandler('cancel', cancel_conversation),
+            CommandHandler('start', start),
+            CommandHandler('help', help_command),
+            CommandHandler('downloads', downloads_command),
             CallbackQueryHandler(cancel_conversation_and_restart, pattern='^cancel$'),
-            MessageHandler(filters.COMMAND, cancel_conversation),
-            MessageHandler(filters.ALL, cancel_conversation),
-            CallbackQueryHandler(_restart_conversation),
+            CallbackQueryHandler(_restart_conversation, pattern='^back_to_start$'),
         ],
         per_user=True,
     )
@@ -69,28 +104,9 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("downloads", downloads_command))
     application.add_handler(CommandHandler("cancel", cancel_conversation))
     application.add_handler(CallbackQueryHandler(_restart_conversation, pattern='^back_to_start$'))
-    application.add_handler(CallbackQueryHandler(unmonitor_callback, pattern=r'(?i)^(unmonitor|unfollow|dejar_seguir|stop_monitor).*'))
 
     # Global Error Handler
     application.add_error_handler(global_error_handler)
-
-    # Define base commands for Telegram UI menu
-    base_commands = [
-        BotCommand("start", "Iniciar una nueva búsqueda"),
-        BotCommand("downloads", "Ver descargas actuales"),
-        BotCommand("help", "Mostrar ayuda"),
-        BotCommand("cancel", "Cancelar la operación actual"),
-    ]
-
-    async def post_init_commands(context_param: CallbackContext) -> None:
-        try:
-            await context_param.bot.set_my_commands(base_commands)
-            logger.info("Bot commands successfully set.")
-        except Exception as e:
-            logger.error(f"Failed to set bot commands: {e}", exc_info=True)
-
-    if application.job_queue:
-        application.job_queue.run_once(post_init_commands, when=0)
 
     logger.info("Starting PlexArrs bot...")
     application.run_polling()

@@ -8,7 +8,7 @@ from config import (
     RADARR_QUALITY_PROFILE_ID,
     DEFAULT_TIMEOUT,
 )
-from utils import make_api_request, http_session
+from utils import make_api_request, get_http_session
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,8 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
     payload = {
         "title": movie_info.get('title'),
         "tmdbId": movie_info.get('tmdbId'),
+        "year": movie_info.get('year', 0),
+        "titleSlug": movie_info.get('titleSlug', ''),
         "qualityProfileId": RADARR_QUALITY_PROFILE_ID,
         "rootFolderPath": "/data/movies",
         "monitored": True,
@@ -63,8 +65,9 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
     clean_base = RADARR_URL.rstrip('/')
     url = f"{clean_base}/api/v3/movie"
     response = None
+    session = get_http_session()
     try:
-        response = http_session.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+        response = session.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
         logger.info(f"Movie '{movie_info.get('title')}' added successfully to Radarr.")
         return True
@@ -101,12 +104,16 @@ def unmonitor_movie(movie_id: int) -> bool:
         "movieIds": [int(movie_id)],
         "monitored": False
     }
+    session = get_http_session()
     try:
-        response = http_session.put(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+        response = session.put(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
+        data = response.json()
+        if isinstance(data, list) and len(data) == 0:
+            logger.info(f"Movie ID {movie_id} was not found in Radarr (empty response list).")
+            return False
         logger.info(f"Movie ID {movie_id} successfully unmonitored in Radarr.")
         return True
     except Exception:
         logger.exception(f"Failed to unmonitor movie ID {movie_id} in Radarr.")
         return False
-
