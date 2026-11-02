@@ -20,6 +20,7 @@ docker-compose*.yml
 *.env*
 .env*
 *.txt
+!requirements.txt
 *.md
 
 # Ignore virtual environment folders
