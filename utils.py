@@ -71,7 +71,8 @@ def make_api_request(base_url: str, api_key: str, endpoint: str, params: dict | 
         return None
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else "Unknown"
-        logger.error(f"HTTP error {status} from {url} (check URL and API key).")
+        body_snippet = e.response.text[:200] if e.response is not None and e.response.text else ""
+        logger.error(f"HTTP error {status} from {url} (check URL and API key): {body_snippet}")
         return None
     except requests.exceptions.RequestException as e:
         logger.error(f"API request failed for {url}: {e}")

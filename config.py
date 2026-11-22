@@ -31,53 +31,76 @@ def is_configured(val: str | None) -> bool:
     return bool(val and val.strip() and not val.strip().startswith('YOUR_'))
 
 
+def _get_env_str(key: str) -> str | None:
+    val = os.environ.get(key)
+    return val.strip() if val is not None else None
+
+
 # Sonarr
-SONARR_URL: str | None = os.environ.get('SONARR_URL')
-SONARR_API_KEY: str | None = os.environ.get('SONARR_API_KEY')
+SONARR_URL: str | None = _get_env_str('SONARR_URL')
+SONARR_API_KEY: str | None = _get_env_str('SONARR_API_KEY')
 SONARR_ROOT_FOLDER_ID: int = _parse_int_env('SONARR_ROOT_FOLDER_ID', 1)
 SONARR_QUALITY_PROFILE_ID: int = _parse_int_env('SONARR_QUALITY_PROFILE_ID', 1)
 
 # Radarr
-RADARR_URL: str | None = os.environ.get('RADARR_URL')
-RADARR_API_KEY: str | None = os.environ.get('RADARR_API_KEY')
+RADARR_URL: str | None = _get_env_str('RADARR_URL')
+RADARR_API_KEY: str | None = _get_env_str('RADARR_API_KEY')
 RADARR_ROOT_FOLDER_ID: int = _parse_int_env('RADARR_ROOT_FOLDER_ID', 1)
 RADARR_QUALITY_PROFILE_ID: int = _parse_int_env('RADARR_QUALITY_PROFILE_ID', 1)
 
 # HolyArrs (unified Radarr + Sonarr compatible stack)
-HOLYARRS_URL: str | None = os.environ.get('HOLYARRS_URL')
-HOLYARRS_API_KEY: str | None = os.environ.get('HOLYARRS_API_KEY')
+HOLYARRS_URL: str | None = _get_env_str('HOLYARRS_URL')
+HOLYARRS_API_KEY: str | None = _get_env_str('HOLYARRS_API_KEY')
+HOLYARRS_RADARR_API_KEY: str | None = _get_env_str('HOLYARRS_RADARR_API_KEY') or HOLYARRS_API_KEY
+HOLYARRS_SONARR_API_KEY: str | None = _get_env_str('HOLYARRS_SONARR_API_KEY') or HOLYARRS_API_KEY
 
 _default_stack = (
     "holyarrs"
     if (is_configured(HOLYARRS_URL) and not is_configured(RADARR_URL) and not is_configured(SONARR_URL))
     else "arr"
 )
-MEDIA_STACK: str = (os.environ.get('MEDIA_STACK') or _default_stack).strip().lower()
+MEDIA_STACK: str = (os.environ.get('MEDIA_STACK') or _default_stack).strip().strip('"\'').lower()
+if MEDIA_STACK == "holyarr":
+    MEDIA_STACK = "holyarrs"
 if MEDIA_STACK not in ("arr", "holyarrs"):
     MEDIA_STACK = _default_stack
 
 active_media_stack: dict[str, str] = {"mode": MEDIA_STACK}
 
 
+def _holyarrs_base_url() -> str | None:
+    if not is_configured(HOLYARRS_URL):
+        return None
+    base = HOLYARRS_URL.rstrip('/')
+    if base.lower().endswith('/radarr') or base.lower().endswith('/sonarr'):
+        base = base[:-7]
+    return base or None
+
+
+def _first_configured(*vals: str | None) -> str | None:
+    for v in vals:
+        if is_configured(v):
+            return v
+    return None
+
+
 def get_radarr_endpoint() -> tuple[str | None, str | None]:
     """Returns (url, api_key) for Radarr based on the active media stack."""
     if active_media_stack["mode"] == "holyarrs":
-        if not is_configured(HOLYARRS_URL):
+        base = _holyarrs_base_url()
+        if not base:
             return None, None
-        base = HOLYARRS_URL.strip().rstrip('/')
-        url = base if base.lower().endswith('/radarr') else f"{base}/radarr"
-        return url, HOLYARRS_API_KEY
+        return f"{base}/radarr", _first_configured(HOLYARRS_RADARR_API_KEY, HOLYARRS_API_KEY, RADARR_API_KEY)
     return RADARR_URL, RADARR_API_KEY
 
 
 def get_sonarr_endpoint() -> tuple[str | None, str | None]:
     """Returns (url, api_key) for Sonarr based on the active media stack."""
     if active_media_stack["mode"] == "holyarrs":
-        if not is_configured(HOLYARRS_URL):
+        base = _holyarrs_base_url()
+        if not base:
             return None, None
-        base = HOLYARRS_URL.strip().rstrip('/')
-        url = base if base.lower().endswith('/sonarr') else f"{base}/sonarr"
-        return url, HOLYARRS_API_KEY
+        return f"{base}/sonarr", _first_configured(HOLYARRS_SONARR_API_KEY, HOLYARRS_API_KEY, SONARR_API_KEY)
     return SONARR_URL, SONARR_API_KEY
 
 
@@ -116,7 +139,13 @@ def validate_config() -> None:
     radarr_ok = is_configured(RADARR_URL) and is_configured(RADARR_API_KEY)
     sonarr_ok = is_configured(SONARR_URL) and is_configured(SONARR_API_KEY)
     arr_ok = radarr_ok or sonarr_ok
-    holyarrs_ok = is_configured(HOLYARRS_URL) and is_configured(HOLYARRS_API_KEY)
+    holyarrs_ok = is_configured(HOLYARRS_URL) and (
+        is_configured(HOLYARRS_RADARR_API_KEY)
+        or is_configured(HOLYARRS_SONARR_API_KEY)
+        or radarr_ok
+        or sonarr_ok
+        or (is_configured(RADARR_API_KEY) or is_configured(SONARR_API_KEY))
+    )
 
     if not arr_ok and not holyarrs_ok:
         logger.critical(
