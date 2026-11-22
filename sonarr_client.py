@@ -89,7 +89,7 @@ def add_series_to_sonarr(series_info: dict) -> bool | str:
             except Exception as json_e:
                 logger.warning(f"Unexpected error parsing Sonarr error response: {json_e}")
 
-        logger.exception(log_message)
+        logger.error(log_message)
         return error_code
 
 
@@ -117,6 +117,9 @@ def unmonitor_series(series_id: int) -> bool:
             return False
         logger.info(f"Series ID {series_id} successfully unmonitored in Sonarr.")
         return True
-    except Exception:
-        logger.exception(f"Failed to unmonitor series ID {series_id} in Sonarr.")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to unmonitor series ID {series_id} in Sonarr: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error unmonitoring series ID {series_id} in Sonarr: {e}")
         return False

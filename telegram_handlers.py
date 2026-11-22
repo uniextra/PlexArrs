@@ -303,8 +303,15 @@ async def search_query_received(update: Update, context: CallbackContext) -> int
         results = await asyncio.to_thread(search_sonarr, query_text)
 
     if results is None:
-        service_name = "Radarr" if search_type == 'movie' else "Sonarr"
-        await update.message.reply_text(f"❌ Could not reach {service_name}. Please check that the service is running and configured properly.")
+        endpoint_url, _ = get_radarr_endpoint() if search_type == 'movie' else get_sonarr_endpoint()
+        base_service = "Radarr" if search_type == 'movie' else "Sonarr"
+        service_name = f"HolyArrs ({base_service})" if active_media_stack["mode"] == "holyarrs" else base_service
+        url_hint = f"\nURL: <code>{html.escape(endpoint_url)}</code>" if endpoint_url else "\n<i>Instance URL not configured.</i>"
+        await update.message.reply_text(
+            f"❌ Could not reach <b>{service_name}</b>.{url_hint}\n"
+            "Please check that the instance is running, the URL/API key are correct, and it is reachable from this container.",
+            parse_mode='HTML',
+        )
         return await _restart_conversation(update, context)
     if not results:
         await update.message.reply_text("Sorry, I couldn't find anything matching that title.")
@@ -462,7 +469,8 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
 
     title = chosen_item.get('title', 'N/A')
     title_str = html.escape(str(title) if title is not None else 'N/A')
-    target_service = 'Sonarr' if search_type == 'series' else 'Radarr'
+    base_service = 'Sonarr' if search_type == 'series' else 'Radarr'
+    target_service = f"HolyArrs ({base_service})" if active_media_stack["mode"] == "holyarrs" else base_service
 
     caption_text_adding = f"⏳ Adding '{title_str}' to {target_service}..."
     try:
@@ -488,7 +496,10 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
         else:
             result_text = f"❌ Failed to add <b>{title_str}</b>. Error code: <code>{add_result}</code>."
     else:
-        result_text = f"❌ Failed to add <b>{title_str}</b>. Check logs for details."
+        result_text = (
+            f"❌ Could not reach or add <b>{title_str}</b> in <b>{target_service}</b>. "
+            "Please check that the instance is running and configured properly."
+        )
 
     try:
         if query.message and query.message.caption:

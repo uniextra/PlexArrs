@@ -75,17 +75,17 @@ def get_qbittorrent_downloads() -> tuple[str | None, str | None]:
         return "\n".join(message_lines), None
 
     except qbittorrentapi.LoginFailed:
-        logger.exception("qBittorrent login failed. Check configured credentials.")
+        logger.error("qBittorrent login failed. Check configured credentials.")
         return None, "qBittorrent login failed. Check credentials."
-    except qbittorrentapi.APIConnectionError as e:
-        logger.exception(f"Could not connect to qBittorrent at {QBITTORRENT_URL}")
-        return None, f"Could not connect to qBittorrent: {e}"
+    except qbittorrentapi.APIConnectionError:
+        logger.error(f"Could not connect to qBittorrent at {QBITTORRENT_URL}. Service unreachable or host/port incorrect.")
+        return None, f"Could not connect to qBittorrent at {QBITTORRENT_URL}. Verify the service is running and reachable."
     except qbittorrentapi.exceptions.NotFound404Error:
-        logger.exception("qBittorrent API endpoint not found (wrong URL or version mismatch).")
+        logger.error("qBittorrent API endpoint not found (wrong URL or version mismatch).")
         return None, "qBittorrent API endpoint not found. Check URL/version."
     except requests.exceptions.RequestException as e:
-        logger.exception(f"Network error communicating with qBittorrent at {QBITTORRENT_URL}")
-        return None, f"Network error connecting to qBittorrent: {e}"
+        logger.error(f"Network error communicating with qBittorrent at {QBITTORRENT_URL}: {e}")
+        return None, f"Could not reach qBittorrent at {QBITTORRENT_URL}. Check network connection."
     except Exception as e:
         logger.exception("An unexpected error occurred while fetching qBittorrent downloads")
         return None, f"An unexpected error occurred: {e}"
