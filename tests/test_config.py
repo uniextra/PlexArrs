@@ -39,8 +39,9 @@ class TestConfig(unittest.TestCase):
         cfg = self._reload_config({
             "TELEGRAM_BOT_TOKEN": "123:token",
             "QBITTORRENT_URL": "http://localhost:8080",
-            "HOLYARRS_URL": "http://192.168.1.100:6262/",
-            "HOLYARRS_API_KEY": "holy_key",
+            "HOLYARRS_URL": "http://192.168.1.100:6262/radarr/",
+            "HOLYARRS_API_KEY": " holy_key ",
+            "MEDIA_STACK": " 'holyarr' ",
         })
         cfg.validate_config()
         self.assertEqual(cfg.active_media_stack["mode"], "holyarrs")
