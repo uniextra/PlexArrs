@@ -35,6 +35,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d - %(funcName)s()] %(message)s',
     level=logging.INFO,
 )
+# Prevent httpx from logging full Telegram API URLs containing the bot token
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Define base commands for Telegram UI menu

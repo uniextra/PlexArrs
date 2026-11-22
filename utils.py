@@ -63,9 +63,20 @@ def make_api_request(base_url: str, api_key: str, endpoint: str, params: dict | 
         response.raise_for_status()
         logger.debug(f"API request successful for {url}. Status: {response.status_code}")
         return response.json()
-    except requests.exceptions.RequestException:
-        logger.exception(f"API request failed for {url}.")
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout connecting to {url} after {DEFAULT_TIMEOUT}s.")
+        return None
+    except requests.exceptions.ConnectionError:
+        logger.error(f"Could not connect to {url}. Service unreachable or host/port incorrect.")
+        return None
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else "Unknown"
+        body_snippet = e.response.text[:200] if e.response is not None and e.response.text else ""
+        logger.error(f"HTTP error {status} from {url} (check URL and API key): {body_snippet}")
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API request failed for {url}: {e}")
         return None
     except json.JSONDecodeError:
-        logger.exception(f"Failed to decode JSON response from {url}")
+        logger.error(f"Failed to decode JSON response from {url}")
         return None
