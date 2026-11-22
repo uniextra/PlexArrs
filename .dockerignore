@@ -15,6 +15,7 @@ docker-compose*.yml
 .git/
 .github/
 .agent/
+tests/
 
 # Environment files, documentation and local notes
 *.env*
