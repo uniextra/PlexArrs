@@ -14,6 +14,7 @@ from telegram_handlers import (
     start,
     help_command,
     downloads_command,
+    stack_command,
     search_type_chosen,
     search_query_received,
     item_chosen,
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 base_commands = [
     BotCommand("start", "Iniciar una nueva búsqueda"),
     BotCommand("downloads", "Ver descargas actuales"),
+    BotCommand("stack", "Ver o cambiar stack (arr / holyarrs)"),
     BotCommand("help", "Mostrar ayuda"),
     BotCommand("cancel", "Cancelar la operación actual"),
 ]
@@ -92,6 +94,7 @@ if __name__ == '__main__':
             CommandHandler('start', start),
             CommandHandler('help', help_command),
             CommandHandler('downloads', downloads_command),
+            CommandHandler('stack', stack_command),
             CallbackQueryHandler(cancel_conversation_and_restart, pattern='^cancel$'),
             CallbackQueryHandler(_restart_conversation, pattern='^back_to_start$'),
         ],
@@ -102,6 +105,7 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("downloads", downloads_command))
+    application.add_handler(CommandHandler("stack", stack_command))
     application.add_handler(CommandHandler("cancel", cancel_conversation))
     application.add_handler(CallbackQueryHandler(_restart_conversation, pattern='^back_to_start$'))
 

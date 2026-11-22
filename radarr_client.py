@@ -2,11 +2,10 @@ import logging
 import requests
 import json
 from config import (
-    RADARR_URL,
-    RADARR_API_KEY,
     RADARR_ROOT_FOLDER_ID,
     RADARR_QUALITY_PROFILE_ID,
     DEFAULT_TIMEOUT,
+    get_radarr_endpoint,
 )
 from utils import make_api_request, get_http_session
 
@@ -15,10 +14,11 @@ logger = logging.getLogger(__name__)
 
 def search_radarr(query: str) -> list | None:
     """Searches Radarr for a movie."""
-    if not RADARR_URL or not RADARR_API_KEY:
+    radarr_url, radarr_api_key = get_radarr_endpoint()
+    if not radarr_url or not radarr_api_key:
         logger.error("Radarr URL or API Key not configured.")
         return None
-    result = make_api_request(RADARR_URL, RADARR_API_KEY, 'movie/lookup', {'term': query})
+    result = make_api_request(radarr_url, radarr_api_key, 'movie/lookup', {'term': query})
     if result is None or not isinstance(result, list):
         return None
     return result
@@ -26,7 +26,8 @@ def search_radarr(query: str) -> list | None:
 
 def add_movie_to_radarr(movie_info: dict) -> bool | str:
     """Adds a movie to Radarr."""
-    if not RADARR_URL or not RADARR_API_KEY:
+    radarr_url, radarr_api_key = get_radarr_endpoint()
+    if not radarr_url or not radarr_api_key:
         logger.error("Radarr URL or API Key not configured.")
         return False
 
@@ -44,7 +45,7 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
     }
 
     # Get the correct root folder path using the configured ID or fallback to the first available
-    root_folders = make_api_request(RADARR_URL, RADARR_API_KEY, 'rootfolder')
+    root_folders = make_api_request(radarr_url, radarr_api_key, 'rootfolder')
     if isinstance(root_folders, list) and root_folders:
         target_folder = next((rf['path'] for rf in root_folders if rf.get('id') == RADARR_ROOT_FOLDER_ID), None)
         if target_folder:
@@ -61,8 +62,8 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
         logger.error("Could not retrieve Radarr root folders via API.")
         return False
 
-    headers = {'X-Api-Key': RADARR_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json'}
-    clean_base = RADARR_URL.rstrip('/')
+    headers = {'X-Api-Key': radarr_api_key, 'Content-Type': 'application/json', 'Accept': 'application/json'}
+    clean_base = radarr_url.rstrip('/')
     url = f"{clean_base}/api/v3/movie"
     response = None
     session = get_http_session()
@@ -93,12 +94,13 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
 
 def unmonitor_movie(movie_id: int) -> bool:
     """Unmonitors a movie in Radarr."""
-    if not RADARR_URL or not RADARR_API_KEY:
+    radarr_url, radarr_api_key = get_radarr_endpoint()
+    if not radarr_url or not radarr_api_key:
         logger.error("Radarr URL or API Key not configured.")
         return False
 
-    headers = {'X-Api-Key': RADARR_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json'}
-    clean_base = RADARR_URL.rstrip('/')
+    headers = {'X-Api-Key': radarr_api_key, 'Content-Type': 'application/json', 'Accept': 'application/json'}
+    clean_base = radarr_url.rstrip('/')
     url = f"{clean_base}/api/v3/movie/editor"
     payload = {
         "movieIds": [int(movie_id)],

@@ -2,11 +2,10 @@ import logging
 import requests
 import json
 from config import (
-    SONARR_URL,
-    SONARR_API_KEY,
     SONARR_ROOT_FOLDER_ID,
     SONARR_QUALITY_PROFILE_ID,
     DEFAULT_TIMEOUT,
+    get_sonarr_endpoint,
 )
 from utils import make_api_request, get_http_session
 
@@ -15,10 +14,11 @@ logger = logging.getLogger(__name__)
 
 def search_sonarr(query: str) -> list | None:
     """Searches Sonarr for a series."""
-    if not SONARR_URL or not SONARR_API_KEY:
+    sonarr_url, sonarr_api_key = get_sonarr_endpoint()
+    if not sonarr_url or not sonarr_api_key:
         logger.error("Sonarr URL or API Key not configured.")
         return None
-    result = make_api_request(SONARR_URL, SONARR_API_KEY, 'series/lookup', {'term': query})
+    result = make_api_request(sonarr_url, sonarr_api_key, 'series/lookup', {'term': query})
     if result is None or not isinstance(result, list):
         return None
     return result
@@ -26,7 +26,8 @@ def search_sonarr(query: str) -> list | None:
 
 def add_series_to_sonarr(series_info: dict) -> bool | str:
     """Adds a series to Sonarr."""
-    if not SONARR_URL or not SONARR_API_KEY:
+    sonarr_url, sonarr_api_key = get_sonarr_endpoint()
+    if not sonarr_url or not sonarr_api_key:
         logger.error("Sonarr URL or API Key not configured.")
         return False
 
@@ -45,7 +46,7 @@ def add_series_to_sonarr(series_info: dict) -> bool | str:
     }
 
     # Get the correct root folder path using the configured ID or fallback to the first available
-    root_folders = make_api_request(SONARR_URL, SONARR_API_KEY, 'rootfolder')
+    root_folders = make_api_request(sonarr_url, sonarr_api_key, 'rootfolder')
     if isinstance(root_folders, list) and root_folders:
         target_folder = next((rf['path'] for rf in root_folders if rf.get('id') == SONARR_ROOT_FOLDER_ID), None)
         if target_folder:
@@ -62,8 +63,8 @@ def add_series_to_sonarr(series_info: dict) -> bool | str:
         logger.error("Could not retrieve Sonarr root folders via API.")
         return False
 
-    headers = {'X-Api-Key': SONARR_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json'}
-    clean_base = SONARR_URL.rstrip('/')
+    headers = {'X-Api-Key': sonarr_api_key, 'Content-Type': 'application/json', 'Accept': 'application/json'}
+    clean_base = sonarr_url.rstrip('/')
     url = f"{clean_base}/api/v3/series"
     response = None
     session = get_http_session()
@@ -94,12 +95,13 @@ def add_series_to_sonarr(series_info: dict) -> bool | str:
 
 def unmonitor_series(series_id: int) -> bool:
     """Unmonitors a series in Sonarr."""
-    if not SONARR_URL or not SONARR_API_KEY:
+    sonarr_url, sonarr_api_key = get_sonarr_endpoint()
+    if not sonarr_url or not sonarr_api_key:
         logger.error("Sonarr URL or API Key not configured.")
         return False
 
-    headers = {'X-Api-Key': SONARR_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json'}
-    clean_base = SONARR_URL.rstrip('/')
+    headers = {'X-Api-Key': sonarr_api_key, 'Content-Type': 'application/json', 'Accept': 'application/json'}
+    clean_base = sonarr_url.rstrip('/')
     url = f"{clean_base}/api/v3/series/editor"
     payload = {
         "seriesIds": [int(series_id)],

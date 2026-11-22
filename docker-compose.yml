@@ -20,6 +20,12 @@ services:
       # Your Radarr API Key (Find in Radarr -> Settings -> General)
       - RADARR_API_KEY=YOUR_RADARR_API_KEY_HERE
 
+      # --- Optional: HolyArrs Unified Stack (alternative or alongside Radarr/Sonarr) ---
+      # Media Stack Selection ("arr" for Radarr+Sonarr, or "holyarrs")
+      # - MEDIA_STACK=arr
+      # - HOLYARRS_URL=http://192.168.1.100:6262
+      # - HOLYARRS_API_KEY=YOUR_HOLYARRS_API_KEY
+
       # Your qBittorrent Web UI URL (e.g., http://qbittorrent.host.or.ip:8080)
       - QBITTORRENT_URL=YOUR_QBITTORRENT_URL_HERE
       # Optional qBittorrent credentials (leave commented if WebUI authentication is disabled or whitelisted)
