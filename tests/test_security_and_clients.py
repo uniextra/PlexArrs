@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
+import requests
 
 import config
 import radarr_client
@@ -68,3 +69,14 @@ class TestSecurityAndClients(unittest.TestCase):
                 sonarr_client.search_sonarr("Dark")
                 mock_radarr_req.assert_called_with("http://holyarrs:6262/radarr", "h_key", "movie/lookup", {"term": "Matrix"})
                 mock_sonarr_req.assert_called_with("http://holyarrs:6262/sonarr", "h_key", "series/lookup", {"term": "Dark"})
+
+    def test_make_api_request_handles_unreachable_host_cleanly(self):
+        mock_session = MagicMock()
+        mock_session.get.side_effect = requests.exceptions.ConnectionError("Host is unreachable")
+
+        with patch.object(utils, "get_http_session", return_value=mock_session):
+            self.assertIsNone(utils.make_api_request("http://192.168.1.100:6262/radarr", "key", "movie/lookup"))
+
+        mock_session.get.side_effect = requests.exceptions.Timeout("Timed out")
+        with patch.object(utils, "get_http_session", return_value=mock_session):
+            self.assertIsNone(utils.make_api_request("http://192.168.1.100:6262/radarr", "key", "movie/lookup"))

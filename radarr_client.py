@@ -88,7 +88,7 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
             except Exception as json_e:
                 logger.warning(f"Unexpected error parsing Radarr error response: {json_e}")
 
-        logger.exception(log_message)
+        logger.error(log_message)
         return error_code
 
 
@@ -116,6 +116,9 @@ def unmonitor_movie(movie_id: int) -> bool:
             return False
         logger.info(f"Movie ID {movie_id} successfully unmonitored in Radarr.")
         return True
-    except Exception:
-        logger.exception(f"Failed to unmonitor movie ID {movie_id} in Radarr.")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to unmonitor movie ID {movie_id} in Radarr: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error unmonitoring movie ID {movie_id} in Radarr: {e}")
         return False
