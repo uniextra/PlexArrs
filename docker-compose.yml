@@ -25,8 +25,6 @@ services:
       # - MEDIA_STACK=arr
       # - HOLYARRS_URL=http://192.168.1.100:6262
       # - HOLYARRS_API_KEY=YOUR_HOLYARRS_API_KEY
-      # - HOLYARRS_RADARR_API_KEY=YOUR_HOLYARRS_RADARR_KEY
-      # - HOLYARRS_SONARR_API_KEY=YOUR_HOLYARRS_SONARR_KEY
 
       # Your qBittorrent Web UI URL (e.g., http://qbittorrent.host.or.ip:8080)
       - QBITTORRENT_URL=YOUR_QBITTORRENT_URL_HERE

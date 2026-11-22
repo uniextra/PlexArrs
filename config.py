@@ -46,12 +46,6 @@ RADARR_QUALITY_PROFILE_ID: int = _parse_int_env('RADARR_QUALITY_PROFILE_ID', 1)
 # HolyArrs (unified Radarr + Sonarr compatible stack)
 HOLYARRS_URL: str | None = os.environ.get('HOLYARRS_URL')
 HOLYARRS_API_KEY: str | None = os.environ.get('HOLYARRS_API_KEY')
-HOLYARRS_RADARR_API_KEY: str | None = (
-    os.environ.get('HOLYARRS_RADARR_API_KEY') or HOLYARRS_API_KEY
-)
-HOLYARRS_SONARR_API_KEY: str | None = (
-    os.environ.get('HOLYARRS_SONARR_API_KEY') or HOLYARRS_API_KEY
-)
 
 _default_stack = (
     "holyarrs"
@@ -72,7 +66,7 @@ def get_radarr_endpoint() -> tuple[str | None, str | None]:
             return None, None
         base = HOLYARRS_URL.strip().rstrip('/')
         url = base if base.lower().endswith('/radarr') else f"{base}/radarr"
-        return url, HOLYARRS_RADARR_API_KEY
+        return url, HOLYARRS_API_KEY
     return RADARR_URL, RADARR_API_KEY
 
 
@@ -83,7 +77,7 @@ def get_sonarr_endpoint() -> tuple[str | None, str | None]:
             return None, None
         base = HOLYARRS_URL.strip().rstrip('/')
         url = base if base.lower().endswith('/sonarr') else f"{base}/sonarr"
-        return url, HOLYARRS_SONARR_API_KEY
+        return url, HOLYARRS_API_KEY
     return SONARR_URL, SONARR_API_KEY
 
 
@@ -122,9 +116,7 @@ def validate_config() -> None:
     radarr_ok = is_configured(RADARR_URL) and is_configured(RADARR_API_KEY)
     sonarr_ok = is_configured(SONARR_URL) and is_configured(SONARR_API_KEY)
     arr_ok = radarr_ok or sonarr_ok
-    holyarrs_ok = is_configured(HOLYARRS_URL) and (
-        is_configured(HOLYARRS_RADARR_API_KEY) or is_configured(HOLYARRS_SONARR_API_KEY)
-    )
+    holyarrs_ok = is_configured(HOLYARRS_URL) and is_configured(HOLYARRS_API_KEY)
 
     if not arr_ok and not holyarrs_ok:
         logger.critical(

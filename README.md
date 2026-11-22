@@ -37,9 +37,7 @@ This bot is configured entirely through environment variables when deployed via 
 *   `QBITTORRENT_PASSWORD`: Your qBittorrent Web UI password (only required if authentication is enabled).
 *   `MEDIA_STACK`: Active media stack on startup (`arr` for Radarr+Sonarr, or `holyarrs`). Auto-selects `holyarrs` if only `HOLYARRS_URL` is configured.
 *   `HOLYARRS_URL`: Base URL of HolyArrs (e.g., `http://192.168.1.100:6262`).
-*   `HOLYARRS_API_KEY`: Unified compatibility API key for HolyArrs.
-*   `HOLYARRS_RADARR_API_KEY`: Radarr-specific API key in HolyArrs (defaults to `HOLYARRS_API_KEY`).
-*   `HOLYARRS_SONARR_API_KEY`: Sonarr-specific API key in HolyArrs (defaults to `HOLYARRS_API_KEY`).
+*   `HOLYARRS_API_KEY`: API key for HolyArrs.
 
 ## Features
 
