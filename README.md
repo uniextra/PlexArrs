@@ -35,12 +35,18 @@ This bot is configured entirely through environment variables when deployed via 
 *   `ALLOWED_USER_IDS`: A comma-separated list of Telegram user IDs that are allowed to interact with the bot (e.g., `123456789,987654321`). For security (Fail-Closed), only users specified here will have access.
 *   `QBITTORRENT_USERNAME`: Your qBittorrent Web UI username (only required if authentication is enabled).
 *   `QBITTORRENT_PASSWORD`: Your qBittorrent Web UI password (only required if authentication is enabled).
+*   `MEDIA_STACK`: Active media stack on startup (`arr` for Radarr+Sonarr, or `holyarrs`). Auto-selects `holyarrs` if only `HOLYARRS_URL` is configured.
+*   `HOLYARRS_URL`: Base URL of HolyArrs (e.g., `http://192.168.1.100:6262`).
+*   `HOLYARRS_API_KEY`: Unified compatibility API key for HolyArrs.
+*   `HOLYARRS_RADARR_API_KEY`: Radarr-specific API key in HolyArrs (defaults to `HOLYARRS_API_KEY`).
+*   `HOLYARRS_SONARR_API_KEY`: Sonarr-specific API key in HolyArrs (defaults to `HOLYARRS_API_KEY`).
 
 ## Features
 
-*   Search for Movies (via Radarr)
-*   Search for TV Series (via Sonarr)
-*   Add selected Movies/Series to Radarr/Sonarr
+*   Search for Movies (via Radarr or HolyArrs)
+*   Search for TV Series (via Sonarr or HolyArrs)
+*   Add selected Movies/Series to Radarr/Sonarr/HolyArrs
+*   Hot-switch between `arr` and `holyarrs` stacks via `/stack` (`/stack holyarrs` / `/stack arr`)
 *   View current download status from qBittorrent (`/downloads` command)
 
 **Finding Sonarr/Radarr IDs:**

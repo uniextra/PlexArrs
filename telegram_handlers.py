@@ -6,6 +6,15 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
 from utils import restricted
+from config import (
+    active_media_stack,
+    get_radarr_endpoint,
+    get_sonarr_endpoint,
+    HOLYARRS_URL,
+    RADARR_URL,
+    SONARR_URL,
+    is_configured,
+)
 from sonarr_client import search_sonarr, add_series_to_sonarr, unmonitor_series
 from radarr_client import search_radarr, add_movie_to_radarr, unmonitor_movie
 from qb_client import get_qbittorrent_downloads
@@ -105,10 +114,71 @@ async def help_command(update: Update, context: CallbackContext) -> None:
             "🤖 <b>Bot Commands:</b>\n\n"
             "• /start - Start a new search for Movies or Series\n"
             "• /downloads - Check active qBittorrent downloads\n"
+            "• /stack - Show or switch media stack (arr / holyarrs)\n"
             "• /help - Show this help message\n"
             "• /cancel - Cancel the current action",
             parse_mode='HTML'
         )
+
+
+@restricted
+async def stack_command(update: Update, context: CallbackContext) -> None:
+    """Shows the active media stack or switches between 'arr' and 'holyarrs'."""
+    if not update.message:
+        return
+
+    arg = " ".join(context.args).strip().lower() if context.args else ""
+
+    if not arg:
+        m_url, _ = get_radarr_endpoint()
+        t_url, _ = get_sonarr_endpoint()
+        await update.message.reply_text(
+            f"<b>Stack multimedia activo:</b> <code>{html.escape(active_media_stack['mode'])}</code>\n"
+            f"• Películas: <code>{html.escape(m_url or 'no configurado')}</code>\n"
+            f"• Series: <code>{html.escape(t_url or 'no configurado')}</code>\n\n"
+            f"Usa <code>/stack holyarrs</code> o <code>/stack arr</code> para cambiar en caliente.",
+            parse_mode='HTML',
+        )
+        return
+
+    if arg in ("holyarrs", "holyarr"):
+        if not is_configured(HOLYARRS_URL):
+            await update.message.reply_text(
+                "⚠️ <code>HOLYARRS_URL</code> no está configurada en el entorno.",
+                parse_mode='HTML',
+            )
+            return
+        active_media_stack["mode"] = "holyarrs"
+        m_url, _ = get_radarr_endpoint()
+        t_url, _ = get_sonarr_endpoint()
+        await update.message.reply_text(
+            f"✅ Stack cambiado a <b>HolyArrs</b>:\n"
+            f"• Películas: <code>{html.escape(m_url or '')}</code>\n"
+            f"• Series: <code>{html.escape(t_url or '')}</code>",
+            parse_mode='HTML',
+        )
+        return
+
+    if arg in ("arr", "radarr", "sonarr"):
+        if not is_configured(RADARR_URL) and not is_configured(SONARR_URL):
+            await update.message.reply_text(
+                "⚠️ Ni <code>RADARR_URL</code> ni <code>SONARR_URL</code> están configuradas.",
+                parse_mode='HTML',
+            )
+            return
+        active_media_stack["mode"] = "arr"
+        await update.message.reply_text(
+            f"✅ Stack cambiado a <b>Radarr + Sonarr</b>:\n"
+            f"• Radarr: <code>{html.escape(RADARR_URL or 'no configurado')}</code>\n"
+            f"• Sonarr: <code>{html.escape(SONARR_URL or 'no configurado')}</code>",
+            parse_mode='HTML',
+        )
+        return
+
+    await update.message.reply_text(
+        "⚠️ Opción no válida. Usa <code>/stack holyarrs</code> o <code>/stack arr</code>.",
+        parse_mode='HTML',
+    )
 
 
 @restricted
