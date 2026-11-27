@@ -80,3 +80,27 @@ def make_api_request(base_url: str, api_key: str, endpoint: str, params: dict | 
     except json.JSONDecodeError:
         logger.error(f"Failed to decode JSON response from {url}")
         return None
+
+
+def extract_error_detail(response) -> str:
+    """Extracts an errorCode or human-readable errorMessage from an API error response."""
+    if response is None:
+        return 'unknown_error'
+    try:
+        error_response = response.json()
+        if isinstance(error_response, list) and error_response:
+            first_error = error_response[0]
+            if isinstance(first_error, dict):
+                if first_error.get('errorCode'):
+                    return str(first_error['errorCode'])
+                if first_error.get('errorMessage'):
+                    return str(first_error['errorMessage'])
+        elif isinstance(error_response, dict):
+            for key in ('errorCode', 'message', 'error', 'errorMessage'):
+                if error_response.get(key):
+                    return str(error_response[key])
+    except json.JSONDecodeError:
+        logger.warning("Failed to decode API error response JSON.")
+    except Exception as json_e:
+        logger.warning(f"Unexpected error parsing API error response: {json_e}")
+    return 'unknown_error'
