@@ -80,3 +80,74 @@ class TestSecurityAndClients(unittest.TestCase):
         mock_session.get.side_effect = requests.exceptions.Timeout("Timed out")
         with patch.object(utils, "get_http_session", return_value=mock_session):
             self.assertIsNone(utils.make_api_request("http://192.168.1.100:6262/radarr", "key", "movie/lookup"))
+
+    def test_add_series_resolves_missing_tvdb_via_tmdb_lookup(self):
+        series_info = {"title": "Furies", "tvdbId": 0, "tmdbId": 243754, "titleSlug": "tmdb-243754", "seasons": []}
+        mock_post_resp = MagicMock()
+        mock_post_resp.raise_for_status.return_value = None
+        mock_session = MagicMock()
+        mock_session.post.return_value = mock_post_resp
+
+        def fake_make_api_request(base_url, api_key, endpoint, params=None):
+            if endpoint == "series/lookup" and params == {"term": "tmdb:243754"}:
+                return [{"title": "Furies", "tvdbId": 444999, "titleSlug": "444999", "seasons": [{"seasonNumber": 1, "monitored": True}]}]
+            if endpoint == "rootfolder":
+                return [{"id": 1, "path": "/data/series/Tv Shows"}]
+            return None
+
+        with patch.object(sonarr_client, "get_sonarr_endpoint", return_value=("http://holyarrs:6262/sonarr", "h_key")), \
+             patch.object(sonarr_client, "make_api_request", side_effect=fake_make_api_request), \
+             patch.object(sonarr_client, "get_http_session", return_value=mock_session), \
+             patch.dict(config.active_media_stack, {"mode": "holyarrs"}):
+            result = sonarr_client.add_series_to_sonarr(series_info)
+
+        self.assertTrue(result)
+        self.assertEqual(series_info["tvdbId"], 0)  # Input dict is not mutated
+        mock_session.post.assert_called_once()
+        call_kwargs = mock_session.post.call_args.kwargs
+        self.assertEqual(mock_session.post.call_args.args[0], "http://holyarrs:6262/sonarr/api/v3/series")
+        self.assertEqual(call_kwargs["json"]["tvdbId"], 444999)
+        self.assertEqual(call_kwargs["json"]["rootFolderPath"], "/data/series/Tv Shows")
+
+    def test_add_series_falls_back_to_holyarrs_native_when_no_tvdb_exists(self):
+        series_info = {"title": "Furies", "tvdbId": 0, "tmdbId": 243754}
+        mock_post_resp = MagicMock()
+        mock_post_resp.raise_for_status.return_value = None
+        mock_session = MagicMock()
+        mock_session.post.return_value = mock_post_resp
+
+        def fake_make_api_request(base_url, api_key, endpoint, params=None):
+            if endpoint == "series/lookup":
+                return [{"title": "Furies", "tvdbId": 0, "tmdbId": 243754}]
+            if endpoint == "rootfolder":
+                return [{"id": 2, "path": "/data/series/Tv Shows"}]
+            return None
+
+        with patch.object(sonarr_client, "get_sonarr_endpoint", return_value=("http://holyarrs:6262/sonarr", "h_key")), \
+             patch.object(sonarr_client, "make_api_request", side_effect=fake_make_api_request), \
+             patch.object(sonarr_client, "get_http_session", return_value=mock_session), \
+             patch.dict(config.active_media_stack, {"mode": "holyarrs"}):
+            result = sonarr_client.add_series_to_sonarr(series_info)
+
+        self.assertTrue(result)
+        mock_session.post.assert_called_once()
+        self.assertEqual(mock_session.post.call_args.args[0], "http://holyarrs:6262/api/v1/shows")
+        self.assertEqual(mock_session.post.call_args.kwargs["json"]["id"], "tmdb:243754")
+        self.assertEqual(mock_session.post.call_args.kwargs["json"]["library_folder_id"], 2)
+
+    def test_extract_error_detail_falls_back_to_error_message(self):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = [
+            {"propertyName": "TvdbId", "errorMessage": "send the show's TVDB id", "attemptedValue": 0, "severity": "error"}
+        ]
+        self.assertEqual(utils.extract_error_detail(mock_resp), "send the show's TVDB id")
+
+    def test_add_series_returns_false_on_network_error(self):
+        series_info = {"title": "Furies", "tvdbId": 444999, "titleSlug": "444999", "seasons": []}
+        mock_session = MagicMock()
+        mock_session.post.side_effect = requests.exceptions.ConnectionError("Connection refused")
+
+        with patch.object(sonarr_client, "get_sonarr_endpoint", return_value=("http://sonarr:8989", "s_key")), \
+             patch.object(sonarr_client, "make_api_request", return_value=[{"id": 1, "path": "/data/tv"}]), \
+             patch.object(sonarr_client, "get_http_session", return_value=mock_session):
+            self.assertFalse(sonarr_client.add_series_to_sonarr(series_info))

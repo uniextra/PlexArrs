@@ -7,7 +7,7 @@ from config import (
     DEFAULT_TIMEOUT,
     get_radarr_endpoint,
 )
-from utils import make_api_request, get_http_session
+from utils import make_api_request, get_http_session, extract_error_detail
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
     # Get the correct root folder path using the configured ID or fallback to the first available
     root_folders = make_api_request(radarr_url, radarr_api_key, 'rootfolder')
     if isinstance(root_folders, list) and root_folders:
-        target_folder = next((rf['path'] for rf in root_folders if rf.get('id') == RADARR_ROOT_FOLDER_ID), None)
+        target_folder = next((rf.get('path') for rf in root_folders if rf.get('id') == RADARR_ROOT_FOLDER_ID), None)
         if target_folder:
             payload['rootFolderPath'] = target_folder
         else:
@@ -73,21 +73,11 @@ def add_movie_to_radarr(movie_info: dict) -> bool | str:
         logger.info(f"Movie '{movie_info.get('title')}' added successfully to Radarr.")
         return True
     except requests.exceptions.RequestException as e:
-        log_message = f"Failed to add movie '{movie_info.get('title')}' to Radarr."
-        error_code = 'unknown_error'
-        if response is not None:
-            log_message += f" Radarr response: {response.text}"
-            try:
-                error_response = response.json()
-                if isinstance(error_response, list) and error_response:
-                    first_error = error_response[0]
-                    if isinstance(first_error, dict) and 'errorCode' in first_error:
-                        error_code = first_error['errorCode']
-            except json.JSONDecodeError:
-                logger.warning("Failed to decode Radarr error response JSON.")
-            except Exception as json_e:
-                logger.warning(f"Unexpected error parsing Radarr error response: {json_e}")
-
+        if response is None:
+            logger.error(f"Network error adding movie '{movie_info.get('title')}' to Radarr: {e}")
+            return False
+        log_message = f"Failed to add movie '{movie_info.get('title')}' to Radarr. Radarr response: {response.text[:300]}"
+        error_code = extract_error_detail(response)
         logger.error(log_message)
         return error_code
 

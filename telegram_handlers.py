@@ -3,6 +3,7 @@ import html
 import asyncio
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import CallbackContext, ConversationHandler
 
 from utils import restricted
@@ -491,10 +492,11 @@ async def add_item_confirmed(update: Update, context: CallbackContext) -> int:
     if add_result is True:
         result_text = f"✅ Successfully added <b>{title_str}</b> and started search."
     elif isinstance(add_result, str):
-        if add_result in ('SeriesExistsValidator', 'MovieExistsValidator'):
+        if add_result in ('SeriesExistsValidator', 'MovieExistsValidator', 'AlreadyInLibrary'):
             result_text = f"⚠️ <b>{title_str}</b> already exists in {target_service}."
         else:
-            result_text = f"❌ Failed to add <b>{title_str}</b>. Error code: <code>{add_result}</code>."
+            escaped_error = html.escape(add_result)
+            result_text = f"❌ Failed to add <b>{title_str}</b>. Details: <code>{escaped_error}</code>."
     else:
         result_text = (
             f"❌ Could not reach or add <b>{title_str}</b> in <b>{target_service}</b>. "
@@ -600,6 +602,10 @@ async def unmonitor_callback(update: Update, context: CallbackContext) -> None:
 
 async def global_error_handler(update: object, context: CallbackContext) -> None:
     """Global error handler that logs exceptions and notifies users gracefully."""
+    if isinstance(context.error, (NetworkError, TimedOut)):
+        logger.warning(f"Transient Telegram network error: {context.error}")
+        return
+
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
     _clear_user_data(context)
 
